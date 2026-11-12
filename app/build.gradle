@@ -26,4 +26,5 @@ android {
 
 dependencies {
     implementation "ai.pleos.playground:TextToSpeech:3.3.1" // SpeakCommand → Pleos on-device TTS
+    implementation "ai.pleos.playground:NaviHelper:3.0.5"  // route to trip places, add approved waypoints
 }

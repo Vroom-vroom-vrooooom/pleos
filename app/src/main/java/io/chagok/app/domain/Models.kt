@@ -25,7 +25,9 @@ data class TripDraft(
     var density: String = "보통",
 )
 
-data class Place(val id: String, val name: String, val time: String, val duration: String, val source: String, val group: String, val reason: String, val distance: String)
+/** `lat`/`lng` let the Pleos app hand the place to the navi; `open` is "방문 가능 여부" (e.g. "영업 중 · 21시까지"). */
+data class Place(val id: String, val name: String, val time: String, val duration: String, val source: String, val group: String, val reason: String, val distance: String,
+                 val lat: Double? = null, val lng: Double? = null, val open: String = "")
 
 interface TripTransferPort { fun stageTrip(draft: TripDraft, places: List<Place>): IntegrationResult }
 interface NavigationPort { fun requestWaypoint(place: Place): IntegrationResult }

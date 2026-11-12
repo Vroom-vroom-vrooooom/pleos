@@ -1,27 +1,35 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  Chagok panel only. Pleos draws the navigation, status bar, DrivingView and dock around this window.
-  Two states (mockup/pleos-screen.html): start (before departure) and live (Chagok floats and speaks what the backend sends).
+  Chagok panel only; Pleos draws the navigation, status bar, DrivingView and dock around this window.
+  start  = before departure: greeting, today's route (코스 바꾸기 shows other trips), 좋아 출발하자 → route goes to the Pleos navi
+  live   = during the trip: Chagok floats and says what the backend sends; the place chip opens the approve sheet
+  sheet  = "들렀다 갈까요?": extra time, whether it's open, approve → navi waypoint / decline
+  arrive = arrival summary when the navi reports the destination
 -->
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android" xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent" android:layout_height="match_parent" android:background="@drawable/bg_chagok"
     tools:context=".ui.CarActivity" tools:theme="@style/Theme.Chagok">
 
-    <!-- start: before departure (parked) -->
+    <!-- ── start ── -->
     <LinearLayout android:id="@+id/start_view" android:layout_width="match_parent" android:layout_height="match_parent"
-        android:orientation="vertical" android:gravity="center_horizontal" android:paddingHorizontal="24dp" android:paddingTop="30dp" android:paddingBottom="20dp">
-        <io.chagok.app.ui.CompanionOrbView android:id="@+id/start_orb" android:layout_width="115dp" android:layout_height="115dp" />
-        <TextView android:id="@+id/start_hello" style="@style/Car.Hello" android:layout_marginTop="17dp" tools:text="오늘은 속초로\n떠나는 날이에요" />
-        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="22dp"
-            android:orientation="vertical" android:background="@drawable/bg_trip_card" android:elevation="3dp" android:paddingHorizontal="20dp" android:paddingTop="18dp" android:paddingBottom="15dp">
+        android:orientation="vertical" android:gravity="center_horizontal" android:paddingHorizontal="24dp" android:paddingTop="22dp" android:paddingBottom="18dp">
+        <io.chagok.app.ui.CompanionOrbView android:id="@+id/start_orb" android:layout_width="96dp" android:layout_height="96dp" />
+        <TextView android:id="@+id/start_hello" style="@style/Car.Hello" android:layout_marginTop="14dp" tools:text="오늘은 속초로\n떠나는 날이에요" />
+        <LinearLayout style="@style/Car.Card" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="18dp"
+            android:orientation="vertical" android:paddingHorizontal="20dp" android:paddingTop="18dp" android:paddingBottom="15dp">
             <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:gravity="center_vertical">
                 <TextView android:id="@+id/start_meta" style="@style/Car.Muted" android:layout_width="0dp" android:layout_weight="1" tools:text="12월 1일 · 친구와 함께" />
                 <TextView android:id="@+id/start_mood" style="@style/Car.Tag" tools:text="활기찬" />
             </LinearLayout>
             <LinearLayout android:id="@+id/start_route" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="10dp" android:orientation="vertical" />
             <View android:layout_width="match_parent" android:layout_height="1dp" android:layout_marginTop="9dp" android:background="@color/hairline" />
-            <TextView android:id="@+id/start_foot" style="@style/Car.Muted" android:layout_marginTop="11dp" android:textSize="13sp" tools:text="2곳 들러요 · 맛집 · 자연·바다" />
+            <TextView android:id="@+id/start_foot" style="@style/Car.Muted" android:layout_marginTop="11dp" android:textSize="13sp" tools:text="2곳 들러요  ·  맛집  ·  자연·바다" />
         </LinearLayout>
+        <!-- other trips: only after "코스 바꾸기" -->
+        <HorizontalScrollView android:id="@+id/start_trips_box" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="12dp"
+            android:scrollbars="none" android:visibility="gone" tools:visibility="visible">
+            <LinearLayout android:id="@+id/start_trips" android:layout_width="wrap_content" android:layout_height="wrap_content" />
+        </HorizontalScrollView>
         <View android:layout_width="0dp" android:layout_height="0dp" android:layout_weight="1" />
         <LinearLayout android:layout_width="match_parent" android:layout_height="58dp">
             <Button android:id="@+id/start_change" style="@style/Car.Button.Ghost" android:layout_width="0dp" android:layout_weight="1" android:text="@string/start_change" />
@@ -29,7 +37,7 @@
         </LinearLayout>
     </LinearLayout>
 
-    <!-- live: ongoing trip. No driver input UI: Chagok floats and says what the backend sends. -->
+    <!-- ── live: Chagok floats and says what the backend sends ── -->
     <LinearLayout android:id="@+id/live_view" android:layout_width="match_parent" android:layout_height="match_parent"
         android:orientation="vertical" android:gravity="center_horizontal" android:visibility="gone">
         <TextView android:id="@+id/live_next" style="@style/Car.Pill" android:layout_marginTop="20dp" tools:text="다음  아바이마을  6분" />
@@ -37,7 +45,37 @@
             android:gravity="center" android:paddingHorizontal="26dp" android:paddingBottom="40dp">
             <io.chagok.app.ui.CompanionOrbView android:id="@+id/live_orb" android:layout_width="130dp" android:layout_height="130dp" />
             <TextView android:id="@+id/live_line" style="@style/Car.Line" android:layout_marginTop="23dp" tools:text="지금 지나는 청초호는 바닷물이 드나들던 석호래요." />
-            <TextView android:id="@+id/live_place" style="@style/Car.PlaceChip" android:layout_marginTop="20dp" android:visibility="gone" tools:text="📍 청초호 둘레길 · 8분 추가" tools:visibility="visible" />
+            <TextView android:id="@+id/live_place" style="@style/Car.PlaceChip" android:layout_marginTop="20dp" android:visibility="gone" tools:text="📍  청초호 둘레길  ·  8분 추가" tools:visibility="visible" />
         </LinearLayout>
     </LinearLayout>
+
+    <!-- ── arrive ── -->
+    <LinearLayout android:id="@+id/arrive_view" android:layout_width="match_parent" android:layout_height="match_parent" android:visibility="gone"
+        android:orientation="vertical" android:gravity="center_horizontal" android:paddingHorizontal="24dp" android:paddingTop="30dp" android:paddingBottom="20dp">
+        <io.chagok.app.ui.CompanionOrbView android:id="@+id/arrive_orb" android:layout_width="100dp" android:layout_height="100dp" />
+        <TextView android:id="@+id/arrive_title" style="@style/Car.Hello" android:layout_marginTop="16dp" tools:text="속초에 도착했어요" />
+        <TextView android:id="@+id/arrive_route" style="@style/Car.Muted" android:layout_marginTop="6dp" android:gravity="center" tools:text="출발 → 아바이마을 → 영금정" />
+        <LinearLayout android:id="@+id/arrive_stats" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="20dp" android:orientation="vertical" />
+        <TextView android:id="@+id/arrive_saved" style="@style/Car.Muted" android:layout_width="match_parent" android:layout_marginTop="12dp" android:gravity="center" tools:text="담은 곳 · 청초호 둘레길" />
+        <View android:layout_width="0dp" android:layout_height="0dp" android:layout_weight="1" />
+        <LinearLayout android:layout_width="match_parent" android:layout_height="58dp">
+            <Button android:id="@+id/arrive_home" style="@style/Car.Button.Ghost" android:layout_width="0dp" android:layout_weight="1" android:text="@string/arrive_home" />
+            <Button android:id="@+id/arrive_phone" style="@style/Car.Button.Deep" android:layout_width="0dp" android:layout_weight="1.8" android:layout_marginStart="9dp" android:text="@string/arrive_phone" />
+        </LinearLayout>
+    </LinearLayout>
+
+    <!-- ── "들렀다 갈까요?" sheet (over live) ── -->
+    <FrameLayout android:id="@+id/sheet_view" android:layout_width="match_parent" android:layout_height="match_parent" android:background="#73000000"
+        android:clickable="true" android:focusable="true" android:visibility="gone">
+        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_gravity="bottom" android:background="@drawable/bg_sheet"
+            android:orientation="vertical" android:paddingHorizontal="22dp" android:paddingTop="22dp" android:paddingBottom="18dp" android:clickable="true">
+            <TextView android:id="@+id/sheet_title" style="@style/Car.Hello" android:layout_width="match_parent" android:gravity="start" android:textSize="21sp" tools:text="청초호 둘레길, 들렀다 갈까요?" />
+            <TextView android:id="@+id/sheet_reason" style="@style/Car.Muted" android:layout_marginTop="4dp" tools:text="담아 뒀어요 · 방금 들은 이야기" />
+            <LinearLayout android:id="@+id/sheet_rows" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="14dp" android:orientation="vertical" />
+            <LinearLayout android:layout_width="match_parent" android:layout_height="58dp" android:layout_marginTop="16dp">
+                <Button android:id="@+id/sheet_decline" style="@style/Car.Button.Ghost" android:layout_width="0dp" android:layout_weight="1" android:text="@string/sheet_decline" />
+                <Button android:id="@+id/sheet_approve" style="@style/Car.Button.Deep" android:layout_width="0dp" android:layout_weight="1.6" android:layout_marginStart="9dp" android:text="@string/sheet_approve" />
+            </LinearLayout>
+        </LinearLayout>
+    </FrameLayout>
 </FrameLayout>

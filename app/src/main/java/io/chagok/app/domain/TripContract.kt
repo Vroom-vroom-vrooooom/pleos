@@ -18,8 +18,8 @@ object TripContract {
 }
 
 /**
- * Backend → Pleos: a line Chagok should say right now while the trip is running (C02 radio).
- * `place` (optional) is the place the line talks about; "이 장소 기억해 줘" then saves that place.
+ * Backend → Pleos: a line Chagok should say right now while the trip is running.
+ * `place` (optional) is the place the line talks about; tapping it saves the place and asks "들렀다 갈까요?" (navi waypoint).
  */
 data class SpeakCommand(val tripId: String, val text: String, val place: Place? = null) {
     fun toJson(): String = JSONObject().put("v", TripContract.VERSION).put("tripId", tripId).put("text", text)
@@ -85,8 +85,10 @@ data class DriveEvent(val tripId: String, val type: Type, val placeId: String?, 
 
 private fun Place.toJson() = JSONObject().put("id", id).put("name", name).put("time", time).put("duration", duration)
     .put("source", source).put("group", group).put("reason", reason).put("distance", distance)
+    .apply { lat?.let { put("lat", it) }; lng?.let { put("lng", it) }; if (open.isNotEmpty()) put("open", open) }
 
 private fun placeFromJson(o: JSONObject) = Place(o.getString("id"), o.getString("name"), o.optString("time"), o.optString("duration"),
-    o.optString("source"), o.optString("group"), o.optString("reason"), o.optString("distance"))
+    o.optString("source"), o.optString("group"), o.optString("reason"), o.optString("distance"),
+    o.optDouble("lat").takeUnless { it.isNaN() }, o.optDouble("lng").takeUnless { it.isNaN() }, o.optString("open"))
 
 private fun JSONArray.strings() = (0 until length()).map { getString(it) }

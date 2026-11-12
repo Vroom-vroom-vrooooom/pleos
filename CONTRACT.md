@@ -42,7 +42,7 @@
 | `endDate` | | `YYYY-MM-DD` 또는 `미정` |
 | `recordRoute` | | 이동 기록 동의 여부. 기본값 `false` |
 | `companions`, `interests` | ✓ | 문자열 배열 |
-| `places` | ✓ | 방문 순서대로. `id`, `name`은 필수이고 나머지는 표시용 문자열 |
+| `places` | ✓ | 방문 순서대로. `id`, `name`은 필수이고 나머지는 표시용 문자열. 선택: `lat`·`lng`(있어야 Pleos 내비로 경로를 보냄), `open`(방문 가능 여부, 예 "영업 중 · 21시까지") |
 
 공개 범위(`visibility`)는 폰에서만 쓰는 값이라 보내지 않습니다.
 
@@ -60,9 +60,9 @@ Pleos 앱이 주행 중에 일어난 일을 하나씩 보냅니다. 폰은 이�
 | `PLACE_SAVED` | "이 장소 기억해 줘" / "여기 마음에 들어" | 저장한 장소 |
 | `WAYPOINT_APPROVED` | C03 "응, 들렀다 가자" | 경유지 장소 |
 | `WAYPOINT_DECLINED` | C03 "다음에 가자" | 경유지 장소 |
-| `TRIP_FINISHED` | C05에서 폰으로 기록을 넘길 때 | 없음 (`null`) |
+| `TRIP_FINISHED` | 목적지 도착(내비 도착 이벤트) | 없음 (`null`) |
 
-`at`은 UTC ISO-8601 시각입니다. 실제 경로 변경은 Pleos 앱이 Pleos SDK로 처리하고, 이 이벤트는 기록용입니다.
+`at`은 UTC ISO-8601 시각입니다. 실제 경로 변경은 Pleos 앱이 Pleos NaviHelper SDK로 처리하고(경로 불러오기, 승인한 경유지 추가), 이 이벤트는 기록용입니다. Pleos 내비 경유지는 최대 2곳이라 그 이상은 기록에만 남습니다.
 
 ## 3. SpeakCommand · 백엔드 → Pleos
 
@@ -78,11 +78,15 @@ Pleos 앱이 주행 중에 일어난 일을 하나씩 보냅니다. 폰은 이�
 | `v` | ✓ | 계약 버전. 지금은 `1` |
 | `tripId` | ✓ | 어느 여행에 대한 말인지. 백엔드가 차량을 찾는 데 씁니다 |
 | `text` | ✓ | 읽을 문장. 빈 문자열은 거절합니다. 운전 중에 듣는 말이므로 짧게(한두 문장) 보냅니다 |
-| `place` | | 이 말이 가리키는 장소(TripPlan의 place와 같은 모양). 있으면 문장 아래 장소 이름·거리를 보여 주고, "이 장소 기억해 줘"가 이 장소를 저장해 `PLACE_SAVED`로 돌려줍니다. 없으면 샘플 장소(경포대)를 씁니다 |
+| `place` | | 이 말이 가리키는 장소(TripPlan의 place와 같은 모양). 있으면 문장 아래에 장소 칩이 붙습니다. 누르면 `PLACE_SAVED`를 보내고 "들렀다 갈까요?" 시트(추가 이동시간 · 방문 가능 · 내비 경유지 자리)를 띄웁니다. `distance`에 "12분 추가", `open`에 영업 정보, `lat`·`lng`가 있어야 승인 때 내비 경유지로 들어갑니다 |
 
 새 명령이 오면 읽던 문장을 끊고 새 문장을 읽습니다. 음성 엔진을 쓸 수 없으면 글자만 보여 줍니다.
 
 ## 로컬 테스트
+
+도착은 원래 Pleos 내비의 도착 이벤트로 오지만, QA에서는 `./qa.sh arrive`(broadcast `io.chagok.app.pleos.ARRIVE`)로 흉내 냅니다.
+
+Pleos 앱이 이미 떠 있을 때는 TripPlan도 broadcast `io.chagok.app.pleos.TRIP`(extra `chagok.trip`)으로 넣습니다. `am start`로 넣으면 Pleos가 차곡을 왼쪽 칸으로 옮깁니다. pleos 레포의 `relay.sh`가 폰과 Pleos 에뮬레이터 사이에서 이 방식으로 중계합니다.
 
 1. 폰 앱에서 P09 "차로 보내기 · 데모"를 누르면 대화상자와 logcat에 TripPlan JSON이 나옵니다.
 2. 그 JSON을 Pleos 에뮬레이터의 차량 앱에 넣어 실행합니다.
