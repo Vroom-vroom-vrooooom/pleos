@@ -7,7 +7,7 @@
 | `phone` | 폰 앱 `io.chagok.app.phone` | P01~P13: 여행 설정, 추천, 일정, 사진, 기록 |
 | `pleos` | Pleos 차량 앱 `io.chagok.app.pleos` | C01~C05: 출발 인사, 라디오, 경유지 승인, 발견, 마무리 |
 
-두 앱이 주고받는 것은 아래 두 메시지뿐입니다. 정의는 `app/src/main/java/io/chagok/app/domain/TripContract.kt`이고, **이 파일과 이 문서는 두 레포에서 항상 똑같아야 합니다.** 바꿀 때는 두 레포에 같은 변경을 함께 올리고, 필드 의미가 바뀌면 `VERSION`을 올립니다. 받는 쪽은 모르는 버전을 거절합니다.
+두 앱과 백엔드가 주고받는 것은 아래 세 메시지뿐입니다. 정의는 `app/src/main/java/io/chagok/app/domain/TripContract.kt`이고, **이 파일과 이 문서는 두 레포에서 항상 똑같아야 합니다.** 바꿀 때는 두 레포에 같은 변경을 함께 올리고, 필드 의미가 바뀌면 `VERSION`을 올립니다. 받는 쪽은 모르는 버전을 거절합니다.
 
 전송 방식(서버 중계 등)은 아직 정하지 않았습니다. 백엔드와 정할 때 메시지 내용은 그대로 두고 전달 경로만 붙입니다. 지금은 양쪽 모두 logcat 태그 `ChagokContract`로 메시지를 출력합니다.
 
@@ -64,6 +64,22 @@ Pleos 앱이 주행 중에 일어난 일을 하나씩 보냅니다. 폰은 이�
 
 `at`은 UTC ISO-8601 시각입니다. 실제 경로 변경은 Pleos 앱이 Pleos SDK로 처리하고, 이 이벤트는 기록용입니다.
 
+## 3. SpeakCommand · 백엔드 → Pleos
+
+여행 중(주행 중)에 백엔드가 "지금 이 말을 해"라고 보내는 명령입니다. Pleos 앱은 받는 즉시 라디오 화면(C02)으로 가서 문장을 띄우고, 구체를 말하는 상태로 바꾸고, Pleos TTS SDK(on-device)로 읽습니다. 다 읽으면 구체가 멈춥니다. 운전자가 "잠깐 쉬어 가자"를 누르면 바로 멈춥니다.
+
+```json
+{"v": 1, "tripId": "demo-1731400000000", "text": "곧 왼쪽으로 설악산이 보여요. 오늘처럼 맑은 날엔 울산바위까지 보인대요."}
+```
+
+| 필드 | 필수 | 설명 |
+|---|---|---|
+| `v` | ✓ | 계약 버전. 지금은 `1` |
+| `tripId` | ✓ | 어느 여행에 대한 말인지. 백엔드가 차량을 찾는 데 씁니다 |
+| `text` | ✓ | 읽을 문장. 빈 문자열은 거절합니다. 운전 중에 듣는 말이므로 짧게(한두 문장) 보냅니다 |
+
+새 명령이 오면 읽던 문장을 끊고 새 문장을 읽습니다. 음성 엔진을 쓸 수 없으면 글자만 보여 줍니다.
+
 ## 로컬 테스트
 
 1. 폰 앱에서 P09 "차로 보내기 · 데모"를 누르면 대화상자와 logcat에 TripPlan JSON이 나옵니다.
@@ -74,5 +90,10 @@ adb shell am start -n io.chagok.app.pleos/io.chagok.app.ui.CarActivity --es chag
 ```
 
 3. 차량 앱에서 버튼을 누르면 DriveEvent가 나옵니다: `adb logcat -s ChagokContract`.
+4. 앱이 떠 있는 상태에서 백엔드 대신 SpeakCommand를 넣습니다. 앱이 같은 화면에서 받아서 말합니다.
+
+```sh
+adb shell am start -n io.chagok.app.pleos/io.chagok.app.ui.CarActivity --es chagok.speak "'{\"v\":1,\"tripId\":\"demo\",\"text\":\"곧 왼쪽으로 설악산이 보여요.\"}'"
+```
 
 잘못된 JSON이나 다른 버전이 들어오면 Pleos 앱은 경고 로그를 남기고 샘플 여행을 보여 줍니다.

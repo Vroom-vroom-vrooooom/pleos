@@ -18,13 +18,13 @@ Pleos Connect에서 돌아가는 차곡 차량 앱(C01~C05)입니다. 출발 인
 adb shell am start -n io.chagok.app.pleos/io.chagok.app.ui.CarActivity --es chagok.trip '<TripPlan JSON>'
 ```
 
-주행 중 이벤트는 `adb logcat -s ChagokContract`로 볼 수 있습니다.
+주행 중 이벤트는 `adb logcat -s ChagokContract`로 볼 수 있습니다. 백엔드가 보내는 "이 말 해" 명령(SpeakCommand)은 `--es chagok.speak '<JSON>'`으로 넣으면 차곡이 Pleos TTS로 읽습니다. 자세한 형식은 CONTRACT.md에 있습니다.
 
 ## 구조
 
 ```text
 app/src/main/java/io/chagok/app/
-  ui/CarActivity.kt          차량 5개 화면 · TripPlan 수신, DriveEvent 발신
+  ui/CarActivity.kt          차량 5개 화면 · TripPlan·SpeakCommand 수신(Pleos TTS SDK), DriveEvent 발신
   ui/CompanionOrbView.kt     파스텔 구체 애니메이션
   ui/ScreenActivity.kt       공통 화면 부품 (phone 레포와 같은 파일)
   domain/TripContract.kt     폰↔Pleos 메시지 (phone 레포와 반드시 같은 파일)

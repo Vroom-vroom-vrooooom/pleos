@@ -23,3 +23,7 @@ android {
 
 // Platform Views keep this skeleton small. Phone ↔ Pleos payloads: domain/TripContract.kt + CONTRACT.md.
 // Kotlin's standard library is added by the Kotlin Android plugin.
+
+dependencies {
+    implementation "ai.pleos.playground:TextToSpeech:3.3.1" // SpeakCommand → Pleos on-device TTS
+}

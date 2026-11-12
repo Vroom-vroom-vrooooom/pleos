@@ -1,5 +1,11 @@
 package io.chagok.app.ui
 
+import ai.pleos.playground.tts.TextToSpeech
+import ai.pleos.playground.tts.constant.ErrorType
+import ai.pleos.playground.tts.constant.Mode
+import ai.pleos.playground.tts.listener.EventListener
+import ai.pleos.playground.tts.listener.OnInitializeListener
+import android.content.Intent
 import android.graphics.Color
 import android.os.Bundle
 import android.util.Log
@@ -7,10 +13,11 @@ import android.widget.*
 import io.chagok.app.R
 import io.chagok.app.domain.*
 import java.time.Instant
+import java.util.Locale
 
 /**
  * Pleos app: C01–C05. Pleos owns the navigation, status and dock; this activity is only the Chagok panel
- * inside the window Pleos gives it. It receives a TripPlan and emits DriveEvents (domain/TripContract.kt).
+ * inside the window Pleos gives it. It receives a TripPlan and SpeakCommands and emits DriveEvents (domain/TripContract.kt).
  */
 class CarActivity : ScreenActivity() {
     override val layout = R.layout.activity_car
@@ -21,10 +28,65 @@ class CarActivity : ScreenActivity() {
     private var discoveryIndex = 0
     private var plan: TripPlan? = null
     private val tripId get() = plan?.tripId ?: "demo"
+    private var tts: TextToSpeech? = null
+    private var ttsReady: Boolean? = null // null while the engine is still starting
+    private var queuedLine: String? = null
+    private var spokenLine: String? = null
+    private var speakingNow = false
 
     override fun onCreate(state: Bundle?) {
         if (state == null) intent.getStringExtra(TripContract.EXTRA_TRIP)?.let(::applyPlan)
         super.onCreate(state)
+        // Pleos TTS SDK, on-device mode: no network or app registration needed.
+        tts = TextToSpeech(applicationContext, Mode.ON_DEVICE).apply {
+            initialize(object : OnInitializeListener {
+                override fun onSuccess() = runOnUiThread { setLocale(Locale.KOREA); ttsReady = true; flushQueuedLine() }
+                override fun onFailure(errorType: ErrorType) = runOnUiThread {
+                    Log.w("ChagokContract", "Pleos TTS unavailable ($errorType); SpeakCommand text is shown only")
+                    ttsReady = false; flushQueuedLine()
+                }
+            })
+            addEventListener(ttsEvents)
+        }
+        if (state == null) intent.getStringExtra(TripContract.EXTRA_SPEAK)?.let(::onSpeak)
+    }
+
+    /** Running app: `am start` with singleTop delivers new TripPlans / SpeakCommands here. */
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        intent.getStringExtra(TripContract.EXTRA_TRIP)?.let { applyPlan(it); render() }
+        intent.getStringExtra(TripContract.EXTRA_SPEAK)?.let(::onSpeak)
+    }
+
+    override fun onDestroy() { tts?.removeEventListener(ttsEvents); tts?.release(); super.onDestroy() }
+
+    private val ttsEvents = object : EventListener {
+        override fun onReady() = Unit
+        override fun onStart() = Unit
+        override fun onUpdatedRms(rms: Double) = Unit
+        override fun onDone() = finishSpeaking()
+        override fun onStop() = finishSpeaking()
+        override fun onError(errorType: ErrorType) { Log.w("ChagokContract", "Pleos TTS error $errorType"); finishSpeaking() }
+    }
+    private fun finishSpeaking() = runOnUiThread { speakingNow = false; if (!isFinishing) render() }
+    private fun flushQueuedLine() { queuedLine?.let { queuedLine = null; say(it) } }
+
+    /** Backend → Pleos. During a trip Chagok switches to the radio (C02), shows the line and says it. */
+    private fun onSpeak(json: String) {
+        val command = runCatching { SpeakCommand.fromJson(json) }
+            .onFailure { Log.w("ChagokContract", "Ignoring invalid SpeakCommand", it) }.getOrNull() ?: return
+        spokenLine = command.text; speakingNow = true
+        if (screen != Screen.CAR_RADIO || vehicleDetail != null) navigate(Screen.CAR_RADIO) else render()
+        say(command.text)
+    }
+
+    private fun say(text: String) {
+        when (ttsReady) {
+            null -> queuedLine = text
+            true -> tts?.speak(text, true)
+            false -> { speakingNow = false; render() } // no Korean voice: text only
+        }
     }
 
     /** Phone → Pleos entry point. Until the transport exists, the plan arrives as an intent extra (see CONTRACT.md). */
@@ -94,6 +156,11 @@ class CarActivity : ScreenActivity() {
                 response(primary, "좋아, 출발하자") { emit(DriveEvent.Type.TRIP_STARTED); navigate(Screen.CAR_RADIO) }
             }
             Screen.CAR_RADIO -> {
+                spokenLine?.let {
+                    status.text = if (speakingNow) "차곡이 이야기하고 있어요" else "차곡이 전한 이야기"
+                    line.text = it
+                    context.text = "${draft.destination} 가는 길 · 길 위의 라디오"
+                }
                 response(primary, "이 장소 기억해 줘") { saveVehiclePlace(repository.radioPlace) }
                 add(Button(this).apply {
                     text = "도착 화면 보기"; textSize = 12f; isAllCaps = false
@@ -132,9 +199,12 @@ class CarActivity : ScreenActivity() {
             }
             else -> Unit
         }
-        val idleStatus = status.text
+        orb.speaking = speakingNow
+        if (speakingNow && screen == Screen.CAR_RADIO) secondary.text = "잠깐 쉬어 가자"
+        val idleStatus = if (speakingNow) "차곡이 전한 이야기" else status.text
         fun toggleSpeaking() {
             orb.speaking = !orb.speaking
+            if (!orb.speaking && speakingNow) { tts?.stop(); speakingNow = false }
             status.text = if (orb.speaking) "차곡이 이야기하는 모습 · 음성 연결 전" else idleStatus
             if (screen == Screen.CAR_RADIO) secondary.text = if (orb.speaking) "잠깐 쉬어 가자" else "말하는 모습 보기"
         }
@@ -148,12 +218,13 @@ class CarActivity : ScreenActivity() {
 
     override fun onSaveInstanceState(out: Bundle) {
         out.putInt("discoveryIndex", discoveryIndex); out.putString("vehicleDetail", vehicleDetail)
-        out.putStringArrayList("saved", ArrayList(savedPlaces)); out.putString("pending", pendingPlace?.id); out.putString("plan", plan?.toJson())
+        out.putStringArrayList("saved", ArrayList(savedPlaces)); out.putString("pending", pendingPlace?.id); out.putString("plan", plan?.toJson()); out.putString("spoken", spokenLine)
         super.onSaveInstanceState(out)
     }
     override fun restore(state: Bundle) {
         super.restore(state)
         state.getString("plan")?.let { plan = runCatching { TripPlan.fromJson(it) }.getOrNull() }
+        spokenLine = state.getString("spoken")
         discoveryIndex = state.getInt("discoveryIndex", 0).coerceAtLeast(0)
         vehicleDetail = state.getString("vehicleDetail")?.takeIf { it == "schedule" || it == "record" }
         savedPlaces.addAll(state.getStringArrayList("saved").orEmpty())
