@@ -2,6 +2,7 @@
 # QA helper for the Chagok Pleos app on a running Pleos Connect emulator. Run with Git Bash.
 #   ./qa.sh install                     build + install the app
 #   ./qa.sh start                       restart the app with a sample trip (속초, 2 places)
+#   ./qa.sh split                       force the half window: navi left, Chagok right
 #   ./qa.sh speak "문장" ["장소 이름"]    send a backend SpeakCommand (optionally about a place)
 #   ./qa.sh bad                         send a broken SpeakCommand (app must ignore it)
 #   ./qa.sh events                      watch TripPlan / DriveEvent / warnings live (Ctrl+C to stop)
@@ -23,6 +24,8 @@ TRIP_ID=qa-trip
 # JSON string escape, then device-shell single-quote escape.
 json_str() { printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'; }
 send() { local extra=$1 json=$2; "$ADB" shell am start -n "$APP" --es "$extra" "'${json//\'/\'\\\'\'}'" >/dev/null; }
+# SpeakCommand goes as a broadcast: an activity start would pull Chagok to the front and Pleos would swap it into the left window.
+say() { local json=$1; "$ADB" shell am broadcast -a io.chagok.app.pleos.SPEAK -p io.chagok.app.pleos --es chagok.speak "'${json//\'/\'\\\'\'}'" >/dev/null; }
 
 case "${1:-}" in
   install)
@@ -39,13 +42,26 @@ case "${1:-}" in
       name=$(json_str "$3")
       place=',"place":{"id":"qa-'$(date +%s)'","name":"'"$name"'","time":"","duration":"","source":"차곡 라디오","group":"이야기","reason":"방금 들은 이야기","distance":"12분 추가 · QA"}'
     fi
-    send chagok.speak '{"v":1,"tripId":"'$TRIP_ID'","text":"'"$text"'"'"$place"'}'
+    say '{"v":1,"tripId":"'$TRIP_ID'","text":"'"$text"'"'"$place"'}'
     echo "sent SpeakCommand" ;;
   bad)
-    send chagok.speak '{"v":1,"tripId":"'$TRIP_ID'","text":""}'
-    send chagok.speak '{"v":9,"tripId":"'$TRIP_ID'","text":"버전이 다른 명령"}'
-    send chagok.speak 'not json'
+    say '{"v":1,"tripId":"'$TRIP_ID'","text":""}'
+    say '{"v":9,"tripId":"'$TRIP_ID'","text":"버전이 다른 명령"}'
+    say 'not json'
     echo "sent 3 invalid SpeakCommands (expect 3 warnings in ./qa.sh events, screen unchanged)" ;;
+  split)
+    # Half window: navi left, Chagok right. Pleos keeps the app that is in front in the left window when the ⋮ handle
+    # is dragged, so bring the navi to the front first. Coordinates are for the 2560×1440 Pleos Connect emulator.
+    chagok_x() { "$ADB" shell am stack list | grep -m1 'io.chagok.app.pleos' | sed -nE 's/.*bounds=\[([0-9]+),.*/\1/p'; }
+    top_app() { "$ADB" shell am stack list | grep -m1 'taskId=' | grep -oE 'io\.chagok\.app\.pleos|navigation' ; }
+    "$ADB" shell pidof io.chagok.app.pleos >/dev/null || { "$0" start; sleep 4; }
+    if [ "$(chagok_x)" = 1718 ]; then echo "split: 이미 내비 왼쪽 / 차곡 오른쪽"; exit 0; fi
+    if [ "$(chagok_x)" = 853 ] && "$ADB" shell am stack list | grep -q 'io.chagok.app.pleos.*\]\[1694'; then
+      "$ADB" shell input swipe 1706 720 2555 720 500; sleep 2   # split the wrong way round: merge back first
+    fi
+    [ "$(top_app)" = navigation ] || { "$ADB" shell input tap 1155 1370; sleep 2; }   # dock: navigation to the front
+    "$ADB" shell input swipe 2547 720 1700 720 600; sleep 2   # drag the ⋮ handle to the middle
+    [ "$(chagok_x)" = 1718 ] && echo "split: 내비 왼쪽 / 차곡 오른쪽" || echo "split failed — check the emulator screen" ;;
   events)
     "$ADB" logcat -T 1 -s ChagokContract:V ;;
   shot)
