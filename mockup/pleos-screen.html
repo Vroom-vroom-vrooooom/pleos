@@ -6,8 +6,10 @@
 <title>Pleos 화면 목업</title>
 <!--
   Pleos Connect 2.1.0 에뮬레이터(2560×1440) 화면을 좌표 그대로 옮긴 목업.
-  Pleos가 그리는 곳: 상태바(오른쪽 위), DrivingView(왼쪽), 독(아래). 차곡이 그리는 곳: 오른쪽 앱 칸 하나.
-  오른쪽 앱 칸은 내비와 차곡이 번갈아 씀(동시에 안 뜸). 왼쪽 차량 그림은 실제 렌더 대신 단순 실루엣.
+  Pleos가 그리는 곳: 상태바(오른쪽 위), DrivingView(왼쪽), 독(아래). 앱 칸(1682×1210)에는 앱이 최대 2개.
+  기본 = 반 칸: 내비(운전자 쪽) + 차곡 세로형 창. 전체 칸 = 앱 하나가 칸 전체(가로형).
+  반 칸 크기 841×1210은 칸을 반으로 나눈 가정값 — 에뮬레이터에서 세로형 앱으로 확인 전.
+  왼쪽 차량 그림은 실제 렌더 대신 단순 실루엣.
 -->
 <style>
   :root { --ink:#243e37; --muted:#717e70; --paper:#fdfdfb; --line:#d9d9d9; }
@@ -42,6 +44,19 @@
   #slot { left:853px; top:90px; width:1682px; height:1210px; overflow:hidden; }
   .app { position:absolute; inset:0; display:none; }
   .app.show { display:block; }
+  /* half mode: navi window (driver side) + Chagok portrait window, both visible */
+  #slot.split .app { display:block; }
+  #slot.split #navi { right:auto; width:841px; }
+  #slot.split #chagok { left:841px; border-left:2px solid #e3e3e3; }
+  #slot.split #panel { left:32px; right:32px; }
+  #slot.split #orb { width:300px; height:300px; }
+  #slot.split #line { font-size:40px; }
+  #slot.split #resp { gap:12px; }
+  #slot.split #resp button { height:88px; font-size:26px; }
+  #slot.split #cnav button { font-size:26px; }
+  .center { left:50% !important; transform:translateX(-50%); }
+  #slot.split #nav-me { top:560px !important; }
+  #slot.split #nav-addr { top:666px !important; }
 
   /* Pleos navigation app (placeholder of the built-in navi) */
   #navi { background:#f6f7fa; }
@@ -75,8 +90,9 @@
 </head>
 <body>
 <div id="bar">
-  <button id="b-chagok" class="on">차곡 띄우기</button>
-  <button id="b-navi">내비 띄우기</button>
+  <button id="b-split" class="on">반 칸 (내비 옆)</button>
+  <button id="b-chagok">차곡 전체 칸</button>
+  <button id="b-navi">내비 전체 칸</button>
   <span class="sep"></span>
   <button id="b-zones">누가 그리나 표시</button>
   <span class="sep"></span>
@@ -139,15 +155,15 @@
   <!-- App slot: Pleos navi OR Chagok, one at a time -->
   <div id="slot" class="abs">
     <div id="navi" class="app">
-      <div class="nbtn" style="left:1558px;top:24px;height:100px;font-size:30px;font-weight:700;line-height:1">2D<br>▲</div>
+      <div class="nbtn" style="right:24px;top:24px;height:100px;font-size:30px;font-weight:700;line-height:1">2D<br>▲</div>
       <div class="abs" style="left:24px;top:969px;width:580px;height:216px;border:1px solid #ddd;background:#fff">
         <div style="height:104px;background:#000;color:#bbb;font-size:32px;display:flex;align-items:center;gap:20px;padding:0 30px">⌕ 어디로 갈까요?</div>
         <div style="height:112px;display:flex;align-items:center;justify-content:space-around;font-size:40px;color:#888"><span>⌂</span><span>▦</span><span style="color:#111">★</span><span style="color:#111">⚡</span></div>
       </div>
-      <div class="abs" style="left:798px;top:956px;width:86px;height:86px;border-radius:50%;border:5px solid #1e8bff;display:grid;place-items:center;color:#1e8bff;font-size:40px">▲</div>
-      <div class="abs" style="left:754px;top:1123px;width:174px;height:62px;background:#fff;border:1px solid #ddd;display:grid;place-items:center;font-size:24px">수정구 시흥동</div>
-      <div class="nbtn" style="left:1558px;top:987px;height:100px">🔈︎</div>
-      <div class="nbtn" style="left:1558px;top:1086px;height:100px">⚙︎</div>
+      <div id="nav-me" class="abs center" style="top:956px;width:86px;height:86px;border-radius:50%;border:5px solid #1e8bff;display:grid;place-items:center;color:#1e8bff;font-size:40px">▲</div>
+      <div id="nav-addr" class="abs center" style="top:1123px;width:174px;height:62px;background:#fff;border:1px solid #ddd;display:grid;place-items:center;font-size:24px">수정구 시흥동</div>
+      <div class="nbtn" style="right:24px;top:987px;height:100px">🔈︎</div>
+      <div class="nbtn" style="right:24px;top:1086px;height:100px">⚙︎</div>
     </div>
 
     <div id="chagok" class="app show">
@@ -190,7 +206,8 @@
   <div class="zone pleos" style="left:0;top:0;width:853px;height:1300px"><span>Pleos · DrivingView</span></div>
   <div class="zone pleos" style="left:853px;top:0;width:1707px;height:90px"><span>Pleos · 시스템 상태바 (우리가 안 그림)</span></div>
   <div class="zone pleos" style="left:0;top:1300px;width:2560px;height:140px;align-items:center"><span>Pleos · 독</span></div>
-  <div class="zone ours" style="left:853px;top:90px;width:1682px;height:1210px;justify-content:flex-end"><span>앱 칸 1682×1210 · 차곡 또는 내비 중 하나만</span></div>
+  <div id="zone-navi" class="zone pleos" style="left:853px;top:90px;width:841px;height:1210px"><span>내비 앱 · Pleos 기본 앱</span></div>
+  <div id="zone-ours" class="zone ours" style="left:853px;top:90px;width:1682px;height:1210px;justify-content:flex-end"><span id="zone-ours-label">앱 칸 1682×1210 · 차곡 또는 내비 중 하나만</span></div>
 </div></div>
 
 <script>
@@ -205,10 +222,17 @@ function fit() {
 }
 addEventListener("resize", fit); fit();
 
-function front(app) { // the app slot holds one app at a time
+// "split": navi + Chagok portrait side by side. "navi" / "chagok": that app alone takes the whole slot.
+let mode = "split";
+function front(app) {
+  mode = app; const split = app === "split";
+  $("slot").classList.toggle("split", split);
   $("navi").classList.toggle("show", app === "navi"); $("chagok").classList.toggle("show", app === "chagok");
-  $("d-navi").classList.toggle("active", app === "navi"); $("d-chagok").classList.toggle("active", app === "chagok");
-  $("b-navi").classList.toggle("on", app === "navi"); $("b-chagok").classList.toggle("on", app === "chagok");
+  $("d-navi").classList.toggle("active", split || app === "navi"); $("d-chagok").classList.toggle("active", split || app === "chagok");
+  $("b-split").classList.toggle("on", split); $("b-navi").classList.toggle("on", app === "navi"); $("b-chagok").classList.toggle("on", app === "chagok");
+  const z = $("zone-ours").style; z.left = (split ? 853 + 841 : 853) + "px"; z.width = (split ? 841 : 1682) + "px";
+  $("zone-navi").style.visibility = split ? "visible" : "hidden";
+  $("zone-ours-label").textContent = split ? "차곡 세로형 창 841×1210 (가정값) · 우리가 그리는 곳" : "앱 칸 1682×1210 · 앱 하나가 전체 사용";
 }
 
 function set(status, line, ctx, r2, r1, sub) {
@@ -243,12 +267,14 @@ function go(v) { view = v; render(); }
 function stopVoice() { try { speechSynthesis.cancel(); } catch (e) {} }
 function toggleSpeak() { if (speaking) { stopVoice(); speaking = false; } else speaking = true; render(); }
 
-// Backend → Pleos SpeakCommand. Same behaviour as the app today: Chagok comes to the front, goes to C02 and speaks.
+// Backend → Pleos SpeakCommand. Half mode: Chagok is already beside the navi, so it just speaks there.
+// Full-slot mode: same as the app today — Chagok comes to the front over the navi.
 function speak(text) {
   const t = text.trim(); if (!t) return;
   const m = t.match(/^(.{2,12}?)(이|가)\s/); // ponytail: guess the place name from "X가 보여요" for the demo only
   spoken = { text: t, place: m ? m[1].replace(/^곧\s*(왼쪽|오른쪽)?으로\s*/, "") : null };
-  front("chagok"); view = "radio"; speaking = true; render();
+  if (mode === "navi") front("chagok");
+  view = "radio"; speaking = true; render();
   try {
     stopVoice(); const u = new SpeechSynthesisUtterance(t); u.lang = "ko-KR";
     u.onend = u.onerror = () => { speaking = false; render(); }; speechSynthesis.speak(u);
@@ -257,17 +283,18 @@ function speak(text) {
 
 $("orb").onclick = toggleSpeak;
 document.querySelectorAll("#cnav button").forEach(b => b.onclick = () => go(b.dataset.go));
+$("b-split").onclick = () => front("split");
 $("b-chagok").onclick = $("d-chagok").onclick = () => front("chagok");
 $("b-navi").onclick = $("d-navi").onclick = () => front("navi");
 $("b-zones").onclick = () => $("b-zones").classList.toggle("on", document.body.classList.toggle("zones"));
 $("b-speak").onclick = () => speak($("speak-text").value);
 $("speak-text").onkeydown = e => { if (e.key === "Enter") speak($("speak-text").value); };
-$("b-reset").onclick = () => { stopVoice(); spoken = null; speaking = false; saved = []; front("chagok"); go("ready"); };
+$("b-reset").onclick = () => { stopVoice(); spoken = null; speaking = false; saved = []; front("split"); go("ready"); };
 setInterval(() => { const d = new Date(); $("clock").textContent = d.toLocaleTimeString("ko-KR", { hour:"2-digit", minute:"2-digit" }).replace(/^(오전|오후) (.*)$/, "$2 $1"); }, 1000);
 render();
 // #zones, #navi in the URL open the page in that state (handy for sharing a link or screenshot).
 if (location.hash.includes("zones")) $("b-zones").click();
-if (location.hash.includes("navi")) front("navi");
+front(location.hash.includes("navi") ? "navi" : location.hash.includes("full") ? "chagok" : "split");
 </script>
 </body>
 </html>
