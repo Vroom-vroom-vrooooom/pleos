@@ -5,37 +5,53 @@ import ai.pleos.playground.tts.constant.ErrorType
 import ai.pleos.playground.tts.constant.Mode
 import ai.pleos.playground.tts.listener.EventListener
 import ai.pleos.playground.tts.listener.OnInitializeListener
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.res.Configuration
-import android.util.DisplayMetrics
-import android.graphics.Color
+import android.os.Build
+import android.graphics.Typeface
 import android.os.Bundle
+import android.text.SpannableStringBuilder
+import android.text.Spanned
+import android.text.style.AbsoluteSizeSpan
+import android.text.style.ForegroundColorSpan
+import android.text.style.StyleSpan
+import android.util.DisplayMetrics
 import android.util.Log
-import android.widget.*
+import android.view.Gravity
+import android.view.View
+import android.widget.FrameLayout
+import android.widget.LinearLayout
+import android.widget.TextView
 import io.chagok.app.R
 import io.chagok.app.domain.*
 import java.time.Instant
+import java.time.LocalDate
 import java.util.Locale
 
 /**
- * Pleos app: C01–C05. Pleos owns the navigation, status and dock; this activity is only the Chagok panel
- * inside the window Pleos gives it. It receives a TripPlan and SpeakCommands and emits DriveEvents (domain/TripContract.kt).
+ * Pleos app. Pleos owns the navigation, status bar, DrivingView and dock; this activity is only the Chagok panel
+ * inside the window Pleos gives it (portrait = the half window beside the navi).
+ *
+ * Two states, same as mockup/pleos-screen.html:
+ * - start (CAR_READY): before departure — greeting, today's route, "좋아, 출발하자".
+ * - live (CAR_RADIO): Chagok floats and says what the backend sends (SpeakCommand). No driver input UI;
+ *   the only touch is the place chip under a line ("담았어요" → PLACE_SAVED).
  */
 class CarActivity : ScreenActivity() {
     override val layout = R.layout.activity_car
     override val startScreen = Screen.CAR_READY
     private val savedPlaces = linkedSetOf<String>()
-    private var pendingPlace: Place? = null
-    private var vehicleDetail: String? = null
-    private var discoveryIndex = 0
     private var plan: TripPlan? = null
     private val tripId get() = plan?.tripId ?: "demo"
     private var tts: TextToSpeech? = null
     private var ttsReady: Boolean? = null // null while the engine is still starting
     private var queuedLine: String? = null
-    private var spoken: SpeakCommand? = null
+    private var current: SpeakCommand? = null // the line on screen
     private var speakingNow = false
+    private var freshLine = false
 
     /**
      * Pleos Connect reports mdpi (160 dpi) on its 2560×1440 screen, so dp/sp UI renders tiny.
@@ -54,13 +70,38 @@ class CarActivity : ScreenActivity() {
             initialize(object : OnInitializeListener {
                 override fun onSuccess() = runOnUiThread { setLocale(Locale.KOREA); ttsReady = true; flushQueuedLine() }
                 override fun onFailure(errorType: ErrorType) = runOnUiThread {
-                    Log.w("ChagokContract", "Pleos TTS unavailable ($errorType); SpeakCommand text is shown only")
+                    Log.w("ChagokContract", "Pleos TTS unavailable ($errorType); lines are shown only")
                     ttsReady = false; flushQueuedLine()
                 }
             })
             addEventListener(ttsEvents)
         }
+        findViewById<View>(R.id.start_go).setOnClickListener {
+            emit(DriveEvent.Type.TRIP_STARTED)
+            val first = itineraryPlaces().firstOrNull()
+            showLine(SpeakCommand(tripId, if (first == null) "출발! 가는 길에 재밌는 이야기가 보이면 들려줄게요."
+                else "출발! 먼저 ${ro(first.name)} 가요. 가는 길에 재밌는 이야기가 보이면 들려줄게요."))
+        }
+        findViewById<View>(R.id.start_change).setOnClickListener { message("코스는 폰의 차곡에서 바꿀 수 있어요") }
+        findViewById<View>(R.id.start_orb).setOnClickListener {
+            speakingNow = true; render(); say("오늘은 ${ro(draft.destination)} 떠나는 날이에요. 준비되면 출발하자고 말해 주세요.")
+        }
+        findViewById<View>(R.id.live_orb).setOnClickListener { if (speakingNow) { tts?.stop(); speakingNow = false; render() } }
+        findViewById<View>(R.id.live_place).setOnClickListener {
+            val place = current?.place ?: return@setOnClickListener
+            if (savedPlaces.add(place.id)) emit(DriveEvent.Type.PLACE_SAVED, place.id)
+            render()
+        }
         if (state == null) intent.getStringExtra(TripContract.EXTRA_SPEAK)?.let(::onSpeak)
+        // SpeakCommands arrive as a broadcast so they don't bring Chagok to the front:
+        // Pleos moves a front-launched app into the primary (left) window and would swap it with the navi.
+        // ponytail: exported for adb/QA; replace with the backend transport and drop the export.
+        if (Build.VERSION.SDK_INT >= 33) registerReceiver(speakReceiver, IntentFilter(ACTION_SPEAK), RECEIVER_EXPORTED)
+        else registerReceiver(speakReceiver, IntentFilter(ACTION_SPEAK))
+    }
+
+    private val speakReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) { intent.getStringExtra(TripContract.EXTRA_SPEAK)?.let(::onSpeak) }
     }
 
     /** Running app: `am start` with singleTop delivers new TripPlans / SpeakCommands here. */
@@ -71,7 +112,7 @@ class CarActivity : ScreenActivity() {
         intent.getStringExtra(TripContract.EXTRA_SPEAK)?.let(::onSpeak)
     }
 
-    override fun onDestroy() { tts?.removeEventListener(ttsEvents); tts?.release(); super.onDestroy() }
+    override fun onDestroy() { unregisterReceiver(speakReceiver); tts?.removeEventListener(ttsEvents); tts?.release(); super.onDestroy() }
 
     private val ttsEvents = object : EventListener {
         override fun onReady() = Unit
@@ -84,13 +125,17 @@ class CarActivity : ScreenActivity() {
     private fun finishSpeaking() = runOnUiThread { speakingNow = false; if (!isFinishing) render() }
     private fun flushQueuedLine() { queuedLine?.let { queuedLine = null; say(it) } }
 
-    /** Backend → Pleos. During a trip Chagok switches to the radio (C02), shows the line and says it. */
+    /** Backend → Pleos. During a trip (or assuming one), Chagok shows the line under the orb and says it. */
     private fun onSpeak(json: String) {
         val command = runCatching { SpeakCommand.fromJson(json) }
             .onFailure { Log.w("ChagokContract", "Ignoring invalid SpeakCommand: ${it.message}") }.getOrNull() ?: return
-        spoken = command; speakingNow = true
-        if (screen != Screen.CAR_RADIO || vehicleDetail != null) navigate(Screen.CAR_RADIO) else render()
-        say(command.text)
+        showLine(command)
+    }
+
+    private fun showLine(line: SpeakCommand) {
+        current = line; speakingNow = true; freshLine = true
+        if (screen != Screen.CAR_RADIO) navigate(Screen.CAR_RADIO) else render()
+        say(line.text)
     }
 
     private fun say(text: String) {
@@ -115,132 +160,116 @@ class CarActivity : ScreenActivity() {
         Log.i("ChagokContract", DriveEvent(tripId, type, placeId, Instant.now().toString()).toJson())
     }
 
-    override fun navigate(next: Screen) { vehicleDetail = null; super.navigate(next) }
-
-    @Suppress("DEPRECATION")
-    override fun onBackPressed() {
-        if (vehicleDetail != null) { vehicleDetail = null; render() } else super.onBackPressed()
-    }
-
     override fun render() {
-        content = findViewById(R.id.vehicle_content)
-        content.removeAllViews()
-        findViewById<TextView>(R.id.vehicle_destination).text = if (screen == Screen.CAR_SUMMARY) "오늘의 기록" else draft.destination
-        findViewById<Button>(R.id.vehicle_schedule).setOnClickListener { vehicleDetail = "schedule"; render() }
-        findViewById<Button>(R.id.vehicle_discover).setOnClickListener { navigate(Screen.CAR_DISCOVER) }
-        findViewById<Button>(R.id.vehicle_record).setOnClickListener { navigate(Screen.CAR_SUMMARY) }
-        if (vehicleDetail != null) {
-            button("차곡으로 돌아가기", false) { vehicleDetail = null; render() }
-            if (vehicleDetail == "schedule") {
-                text("오늘의 작은 여행", 23)
-                text("${draft.departure} · ${draft.destination} · ${draft.mood}", 13, muted)
-                itineraryPlaces().forEach { text("${it.time}   ${it.name}", 17) }
-                button("차곡과 출발하기") { emit(DriveEvent.Type.TRIP_STARTED); navigate(Screen.CAR_RADIO) }
-            } else {
-                text("차곡차곡 쌓인 오늘", 23)
-                text("214 km · 들른 곳 3곳 · 이야기 2개", 18)
-                text("예시 기록 · 실제 위치·사진은 연결 전", 12, muted)
-                text(knownPlaces().filter { it.id in savedPlaces }.distinctBy { it.id }
-                    .joinToString(" · ") { it.name }.ifEmpty { "아직 저장한 장소가 없어요." }, 15)
-                button("폰에서 기록 이어가기") { continueOnPhone() }
-            }
-        } else companion()
-        findViewById<ScrollView>(R.id.vehicle_scroll).scrollTo(0, 0)
+        val live = screen == Screen.CAR_RADIO
+        findViewById<View>(R.id.start_view).visibility = if (live) View.GONE else View.VISIBLE
+        findViewById<View>(R.id.live_view).visibility = if (live) View.VISIBLE else View.GONE
+        if (live) renderLive() else renderStart()
     }
 
-    private fun companion() {
-        layoutInflater.inflate(R.layout.panel_radio, content, true)
-        val orb = findViewById<CompanionOrbView>(R.id.companion_orb)
-        val status = findViewById<TextView>(R.id.companion_status)
-        val line = findViewById<TextView>(R.id.companion_line)
-        val context = findViewById<TextView>(R.id.companion_context)
-        val secondary = findViewById<Button>(R.id.companion_secondary)
-        val primary = findViewById<Button>(R.id.companion_primary)
-        fun response(button: Button, label: String, action: () -> Unit) {
-            button.text = label; button.setOnClickListener { action() }
+    // ── start ──
+    private fun renderStart() {
+        findViewById<CompanionOrbView>(R.id.start_orb).speaking = speakingNow
+        val dest = draft.destination
+        findViewById<TextView>(R.id.start_hello).text = SpannableStringBuilder("오늘은 ").apply {
+            val s = length
+            append(dest)
+            setSpan(StyleSpan(Typeface.BOLD), s, length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            setSpan(ForegroundColorSpan(getColor(R.color.deep)), s, length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            append(ro(dest).removePrefix(dest)).append("\n떠나는 날이에요")
         }
-        when (screen) {
-            Screen.CAR_READY -> {
-                status.text = "오늘의 여정을 준비했어요"
-                line.text = "${draft.destination}에서 만날 ${itineraryIds.size}곳의 이야기,\n함께 떠나 볼까요?"
-                context.text = "${draft.companions.joinToString(" · ")} · ${draft.mood} 분위기로 준비했어요."
-                response(secondary, "어디로 가는지 알려줘") { vehicleDetail = "schedule"; render() }
-                response(primary, "좋아, 출발하자") { emit(DriveEvent.Type.TRIP_STARTED); navigate(Screen.CAR_RADIO) }
+        val who = draft.companions.toList()
+        findViewById<TextView>(R.id.start_meta).text =
+            monthDay(draft.departure) + if (who.isEmpty() || who == listOf("혼자")) " · 혼자 떠나요" else " · ${wa(who.joinToString(", "))} 함께"
+        findViewById<TextView>(R.id.start_mood).text = draft.mood
+        val places = itineraryPlaces()
+        findViewById<LinearLayout>(R.id.start_route).apply {
+            removeAllViews()
+            addView(routeRow("지금", "여기서 출발", places.firstOrNull()?.let(::eta)?.let { "$it 뒤 도착" }.orEmpty(), R.drawable.dot_route_here, first = true, last = places.isEmpty()))
+            places.forEachIndexed { i, p ->
+                addView(routeRow(p.time, p.name, p.duration, if (i == places.lastIndex) R.drawable.dot_route_last else R.drawable.dot_route, first = false, last = i == places.lastIndex))
             }
-            Screen.CAR_RADIO -> {
-                spoken?.let {
-                    status.text = if (speakingNow) "차곡이 이야기하고 있어요" else "차곡이 전한 이야기"
-                    line.text = it.text
-                    context.text = it.place?.let { p -> "${p.name} · ${p.distance}" } ?: "${draft.destination} 가는 길 · 길 위의 라디오"
-                }
-                response(primary, "이 장소 기억해 줘") { saveVehiclePlace(spoken?.place ?: repository.radioPlace) }
-                add(Button(this).apply {
-                    text = "도착 화면 보기"; textSize = 12f; isAllCaps = false
-                    setBackgroundColor(Color.TRANSPARENT); setTextColor(muted)
-                    setOnClickListener { navigate(Screen.CAR_SUMMARY) }
-                })
-            }
-            Screen.CAR_APPROVAL -> {
-                val place = pendingPlace ?: repository.radioPlace
-                status.text = "마음에 담아 두었어요"
-                line.text = "${place.name}에\n잠깐 들렀다 갈까요?"
-                context.text = "경유지로 추가하면 ${detourMinutes(place)}분 더 걸려요. · 예시"
-                response(secondary, "다음에 가자") { emit(DriveEvent.Type.WAYPOINT_DECLINED, place.id); navigate(Screen.CAR_RADIO) }
-                response(primary, "응, 들렀다 가자") {
-                    repository.requestWaypoint(place)
-                    emit(DriveEvent.Type.WAYPOINT_APPROVED, place.id)
-                    navigate(Screen.CAR_RADIO)
-                    message("경유지 승인 화면 예시예요. 실제 내비 경로는 바뀌지 않아요.")
-                }
-            }
-            Screen.CAR_DISCOVER -> {
-                val options = repository.places.take(3)
-                val place = options[discoveryIndex % options.size]
-                status.text = "이런 곳은 어떠세요?"
-                line.text = "${place.name}에서\n조금 쉬어 가도 좋겠어요."
-                context.text = "${place.source} · ${place.distance}"
-                response(secondary, "다른 곳도 알려줘") { discoveryIndex = (discoveryIndex + 1) % options.size; render() }
-                response(primary, "여기 마음에 들어") { saveVehiclePlace(place) }
-            }
-            Screen.CAR_SUMMARY -> {
-                status.text = "오늘도 함께해 줘서 고마워요"
-                line.text = "오늘, 가장 오래 기억하고 싶은\n순간은 무엇인가요?"
-                context.text = "함께 달린 214 km · 들른 곳 3곳 · 예시 기록"
-                response(secondary, "오늘을 돌아볼래") { vehicleDetail = "record"; render() }
-                response(primary, "사진으로 남겨 볼래") { continueOnPhone() }
-            }
-            else -> Unit
         }
-        orb.speaking = speakingNow
-        if (speakingNow && screen == Screen.CAR_RADIO) secondary.text = "잠깐 쉬어 가자"
-        val idleStatus = if (speakingNow) "차곡이 전한 이야기" else status.text
-        fun toggleSpeaking() {
-            orb.speaking = !orb.speaking
-            if (!orb.speaking && speakingNow) { tts?.stop(); speakingNow = false }
-            status.text = if (orb.speaking) "차곡이 이야기하는 모습 · 음성 연결 전" else idleStatus
-            if (screen == Screen.CAR_RADIO) secondary.text = if (orb.speaking) "잠깐 쉬어 가자" else "말하는 모습 보기"
-        }
-        orb.setOnClickListener { toggleSpeaking() }
-        if (screen == Screen.CAR_RADIO) secondary.setOnClickListener { toggleSpeaking() }
+        findViewById<TextView>(R.id.start_foot).text = (listOf("${places.size}곳 들러요") + draft.interests).joinToString("  ·  ")
     }
 
-    private fun continueOnPhone() { emit(DriveEvent.Type.TRIP_FINISHED); message("폰 앱에서 기록을 이어가요. 폰↔차량 연동은 연결 전이에요.") }
-    private fun saveVehiclePlace(place: Place) { pendingPlace = place; savedPlaces.add(place.id); emit(DriveEvent.Type.PLACE_SAVED, place.id); navigate(Screen.CAR_APPROVAL) }
-    private fun knownPlaces() = repository.places + repository.radioPlace + plan?.places.orEmpty() + listOfNotNull(spoken?.place)
-    private fun detourMinutes(place: Place) = when (place.id) { "anmok" -> 8; "gyeongpo" -> 18; else -> 12 }
+    /** One stop on today's route: time · rail with dot · name · note. */
+    private fun routeRow(time: String, name: String, note: String, dot: Int, first: Boolean, last: Boolean): View {
+        val here = dot == R.drawable.dot_route_here
+        return LinearLayout(this).apply {
+            gravity = Gravity.CENTER_VERTICAL
+            layoutParams = LinearLayout.LayoutParams(-1, dp(40))
+            addView(TextView(context).apply { text = time; textSize = 15f; setTextColor(getColor(R.color.soft_ink)); fontFeatureSettings = "tnum" }, LinearLayout.LayoutParams(dp(59), -2))
+            addView(FrameLayout(context).apply {
+                fun rail(g: Int) = addView(View(context).apply { setBackgroundColor(0xFFCFDAC8.toInt()) }, FrameLayout.LayoutParams(dp(2), dp(20), g or Gravity.CENTER_HORIZONTAL))
+                if (!first) rail(Gravity.TOP)
+                if (!last) rail(Gravity.BOTTOM)
+                addView(View(context).apply { setBackgroundResource(dot) }, FrameLayout.LayoutParams(dp(11), dp(11), Gravity.CENTER))
+            }, LinearLayout.LayoutParams(dp(32), -1))
+            addView(TextView(context).apply {
+                text = name; textSize = if (here) 16f else 18f
+                setTextColor(getColor(if (here) R.color.soft_ink else R.color.ink))
+                if (!here) typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+            }, LinearLayout.LayoutParams(0, -2, 1f))
+            addView(TextView(context).apply { text = note; textSize = 14f; setTextColor(getColor(R.color.soft_ink)) })
+        }
+    }
+
+    // ── live ──
+    private fun renderLive() {
+        findViewById<CompanionOrbView>(R.id.live_orb).speaking = speakingNow
+        val next = itineraryPlaces().firstOrNull()
+        findViewById<TextView>(R.id.live_next).apply {
+            visibility = if (next == null) View.INVISIBLE else View.VISIBLE
+            if (next != null) text = SpannableStringBuilder().apply {
+                fun muted(t: String) { val s = length; append(t)
+                    setSpan(ForegroundColorSpan(getColor(R.color.soft_ink)), s, length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+                    setSpan(AbsoluteSizeSpan(13, true), s, length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE) }
+                muted("다음  ")
+                val s = length; append(next.name); setSpan(StyleSpan(Typeface.BOLD), s, length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+                eta(next)?.let { muted("  $it") }
+            }
+        }
+        val line = findViewById<TextView>(R.id.live_line)
+        line.text = current?.text.orEmpty()
+        val target = if (current != null && !speakingNow) .5f else 1f // dimmed once said
+        if (freshLine) {
+            freshLine = false
+            line.alpha = 0f; line.translationY = dp(9).toFloat()
+            line.animate().alpha(target).translationY(0f).setDuration(450).start()
+        } else line.animate().alpha(target).setDuration(600).start()
+        findViewById<TextView>(R.id.live_place).apply {
+            val place = current?.place
+            visibility = if (place == null) View.GONE else View.VISIBLE
+            if (place != null) {
+                val kept = place.id in savedPlaces
+                isSelected = kept
+                setTextColor(getColor(if (kept) R.color.deep else R.color.soft_ink))
+                text = if (kept) "✓  ${place.name} 담았어요" else "📍  ${place.name}" + place.distance.takeIf { it.isNotBlank() }?.let { "  ·  $it" }.orEmpty()
+            }
+        }
+    }
+
+    private companion object { const val ACTION_SPEAK = "io.chagok.app.pleos.SPEAK" }
+
+    // ── small helpers ──
+    /** "2 km · 6분" → "6분"; a bare value stays as is. */
+    private fun eta(p: Place) = p.distance.substringAfterLast("·").trim().ifBlank { null }
+    private fun monthDay(date: String) = runCatching { LocalDate.parse(date).let { "${it.monthValue}월 ${it.dayOfMonth}일" } }.getOrDefault(date)
+    /** Korean particle: 받침 → "으로" (but ㄹ → "로"), else "로". 속초로 / 강릉으로 / 서울로. */
+    private fun ro(word: String): String { val j = jong(word); return word + if (j != null && j != 0 && j != 8) "으로" else "로" }
+    /** 부모님과 / 친구와. */
+    private fun wa(word: String): String { val j = jong(word); return word + if (j != null && j != 0) "과" else "와" }
+    private fun jong(word: String): Int? = word.trim().lastOrNull()?.takeIf { it in '가'..'힣' }?.let { (it - '가') % 28 }
 
     override fun onSaveInstanceState(out: Bundle) {
-        out.putInt("discoveryIndex", discoveryIndex); out.putString("vehicleDetail", vehicleDetail)
-        out.putStringArrayList("saved", ArrayList(savedPlaces)); out.putString("pending", pendingPlace?.id); out.putString("plan", plan?.toJson()); out.putString("spoken", spoken?.toJson())
+        out.putStringArrayList("saved", ArrayList(savedPlaces)); out.putString("plan", plan?.toJson()); out.putString("spoken", current?.toJson())
         super.onSaveInstanceState(out)
     }
     override fun restore(state: Bundle) {
         super.restore(state)
         state.getString("plan")?.let { plan = runCatching { TripPlan.fromJson(it) }.getOrNull() }
-        spoken = state.getString("spoken")?.let { runCatching { SpeakCommand.fromJson(it) }.getOrNull() }
-        discoveryIndex = state.getInt("discoveryIndex", 0).coerceAtLeast(0)
-        vehicleDetail = state.getString("vehicleDetail")?.takeIf { it == "schedule" || it == "record" }
+        current = state.getString("spoken")?.let { runCatching { SpeakCommand.fromJson(it) }.getOrNull() }
         savedPlaces.addAll(state.getStringArrayList("saved").orEmpty())
-        pendingPlace = knownPlaces().find { it.id == state.getString("pending") }
     }
 }

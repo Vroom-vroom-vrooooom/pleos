@@ -1,19 +1,48 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">차곡</string>
-    <string name="companion_radio_status">지금, 차창 밖에서 발견한 이야기</string>
-    <string name="companion_radio_line">저 바다를 보면 떠오르는\n여행이 있으세요?</string>
-    <string name="companion_radio_context">옆으로 지나가는 경포대, 잠깐의 이야기를 건네 볼게요.</string>
-    <string name="companion_play">말하는 모습 보기</string>
-    <string name="companion_save">이 장소 기억해 줘</string>
-    <string name="vehicle_destination">강릉</string>
-    <string name="vehicle_schedule">오늘 일정</string>
-    <string name="vehicle_discover">주변 발견</string>
-    <string name="vehicle_record">여행 기록</string>
-    <style name="Button.Response" parent="android:style/Widget.Material.Button.Borderless">
-        <item name="android:layout_width">0dp</item><item name="android:layout_height">wrap_content</item><item name="android:layout_weight">1</item>
-        <item name="android:minHeight">48dp</item><item name="android:minWidth">0dp</item><item name="android:padding">10dp</item>
-        <item name="android:textSize">13sp</item><item name="android:textColor">@color/ink</item><item name="android:textAllCaps">false</item>
-        <item name="android:background">@drawable/bg_response</item>
+    <string name="start_change">코스 바꾸기</string>
+    <string name="start_go">좋아, 출발하자</string>
+    <style name="Car.Hello" parent="">
+        <item name="android:layout_width">wrap_content</item><item name="android:layout_height">wrap_content</item>
+        <item name="android:textSize">26sp</item><item name="android:textColor">@color/ink</item><item name="android:gravity">center</item>
+        <item name="android:fontFamily">sans-serif-medium</item><item name="android:lineSpacingMultiplier">1.2</item><item name="android:lineBreakWordStyle">phrase</item><item name="android:letterSpacing">-0.02</item>
+    </style>
+    <style name="Car.Muted" parent="">
+        <item name="android:layout_width">wrap_content</item><item name="android:layout_height">wrap_content</item>
+        <item name="android:textSize">14sp</item><item name="android:textColor">@color/soft_ink</item>
+    </style>
+    <style name="Car.Tag" parent="Car.Muted">
+        <item name="android:textSize">13sp</item><item name="android:textColor">@color/deep</item>
+        <item name="android:background">@drawable/bg_tag</item><item name="android:paddingHorizontal">10dp</item><item name="android:paddingVertical">3dp</item>
+    </style>
+    <style name="Car.Pill" parent="">
+        <item name="android:layout_width">wrap_content</item><item name="android:layout_height">wrap_content</item>
+        <item name="android:textSize">16sp</item><item name="android:textColor">@color/ink</item>
+        <item name="android:background">@drawable/bg_pill</item><item name="android:elevation">2dp</item>
+        <item name="android:paddingHorizontal">15dp</item><item name="android:paddingVertical">9dp</item>
+    </style>
+    <style name="Car.Line" parent="">
+        <item name="android:layout_width">wrap_content</item><item name="android:layout_height">wrap_content</item>
+        <item name="android:minHeight">90dp</item><item name="android:maxWidth">450dp</item>
+        <item name="android:textSize">21sp</item><item name="android:textColor">@color/ink</item><item name="android:gravity">center_horizontal</item>
+        <item name="android:fontFamily">sans-serif-medium</item><item name="android:lineSpacingMultiplier">1.25</item>
+        <item name="android:breakStrategy">balanced</item><item name="android:lineBreakWordStyle">phrase</item>
+    </style>
+    <style name="Car.PlaceChip" parent="">
+        <item name="android:layout_width">wrap_content</item><item name="android:layout_height">wrap_content</item>
+        <item name="android:minHeight">48dp</item><item name="android:gravity">center</item>
+        <item name="android:textSize">15sp</item><item name="android:textColor">@color/soft_ink</item>
+        <item name="android:background">@drawable/bg_place_chip</item><item name="android:paddingHorizontal">16dp</item>
+    </style>
+    <style name="Car.Button" parent="android:style/Widget.Material.Button.Borderless">
+        <item name="android:layout_height">match_parent</item><item name="android:textSize">17sp</item>
+        <item name="android:textAllCaps">false</item><item name="android:stateListAnimator">@null</item>
+    </style>
+    <style name="Car.Button.Deep">
+        <item name="android:background">@drawable/bg_btn_deep</item><item name="android:textColor">#FFFFFF</item><item name="android:elevation">4dp</item>
+    </style>
+    <style name="Car.Button.Ghost">
+        <item name="android:background">@drawable/bg_btn_ghost</item><item name="android:textColor">@color/ink</item>
     </style>
 </resources>

@@ -92,10 +92,10 @@ adb shell am start -n io.chagok.app.pleos/io.chagok.app.ui.CarActivity --es chag
 ```
 
 3. 차량 앱에서 버튼을 누르면 DriveEvent가 나옵니다: `adb logcat -s ChagokContract`.
-4. 앱이 떠 있는 상태에서 백엔드 대신 SpeakCommand를 넣습니다. 앱이 같은 화면에서 받아서 말합니다. pleos 레포의 `./qa.sh speak "문장" ["장소"]`가 같은 일을 합니다(QA.md 참고).
+4. 앱이 떠 있는 상태에서 백엔드 대신 SpeakCommand를 broadcast로 넣습니다. 앱을 앞으로 부르지 않아서 내비 옆 반 칸 배치가 그대로 유지됩니다(`am start`로 보내면 Pleos가 차곡을 왼쪽 칸으로 옮깁니다). pleos 레포의 `./qa.sh speak "문장" ["장소"]`가 같은 일을 합니다.
 
 ```sh
-adb shell am start -n io.chagok.app.pleos/io.chagok.app.ui.CarActivity --es chagok.speak "'{\"v\":1,\"tripId\":\"demo\",\"text\":\"곧 왼쪽으로 설악산이 보여요.\"}'"
+adb shell am broadcast -a io.chagok.app.pleos.SPEAK -p io.chagok.app.pleos --es chagok.speak "'{\"v\":1,\"tripId\":\"demo\",\"text\":\"곧 왼쪽으로 설악산이 보여요.\"}'"
 ```
 
 잘못된 JSON이나 다른 버전이 들어오면 Pleos 앱은 경고 로그를 남기고 샘플 여행을 보여 줍니다.

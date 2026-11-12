@@ -7,4 +7,8 @@
     <color name="line">#E2E6D9</color>
     <color name="sage">#E8EDDF</color>
     <color name="accent">#AA6744</color>
+    <color name="deep">#2E5440</color>
+    <color name="leaf">#E2ECD8</color>
+    <color name="hairline">#EBE9E1</color>
+    <color name="soft_ink">#83907F</color>
 </resources>

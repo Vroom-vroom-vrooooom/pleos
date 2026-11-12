@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Panel background: soft lavender at the top fading to warm paper (matches mockup/pleos-screen.html). -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android">
+    <gradient android:angle="270" android:startColor="#F5F0FB" android:centerColor="#FBFAF6" android:endColor="#F7F6EF" />
+</shape>
