@@ -5,7 +5,10 @@ import ai.pleos.playground.tts.constant.ErrorType
 import ai.pleos.playground.tts.constant.Mode
 import ai.pleos.playground.tts.listener.EventListener
 import ai.pleos.playground.tts.listener.OnInitializeListener
+import android.content.Context
 import android.content.Intent
+import android.content.res.Configuration
+import android.util.DisplayMetrics
 import android.graphics.Color
 import android.os.Bundle
 import android.util.Log
@@ -31,8 +34,17 @@ class CarActivity : ScreenActivity() {
     private var tts: TextToSpeech? = null
     private var ttsReady: Boolean? = null // null while the engine is still starting
     private var queuedLine: String? = null
-    private var spokenLine: String? = null
+    private var spoken: SpeakCommand? = null
     private var speakingNow = false
+
+    /**
+     * Pleos Connect reports mdpi (160 dpi) on its 2560×1440 screen, so dp/sp UI renders tiny.
+     * ponytail: draw the panel at 2× (xhdpi); replace with the Pleos design-system scale once we have it.
+     */
+    override fun attachBaseContext(base: Context) {
+        val config = Configuration(base.resources.configuration).apply { densityDpi = DisplayMetrics.DENSITY_XHIGH }
+        super.attachBaseContext(base.createConfigurationContext(config))
+    }
 
     override fun onCreate(state: Bundle?) {
         if (state == null) intent.getStringExtra(TripContract.EXTRA_TRIP)?.let(::applyPlan)
@@ -75,8 +87,8 @@ class CarActivity : ScreenActivity() {
     /** Backend → Pleos. During a trip Chagok switches to the radio (C02), shows the line and says it. */
     private fun onSpeak(json: String) {
         val command = runCatching { SpeakCommand.fromJson(json) }
-            .onFailure { Log.w("ChagokContract", "Ignoring invalid SpeakCommand", it) }.getOrNull() ?: return
-        spokenLine = command.text; speakingNow = true
+            .onFailure { Log.w("ChagokContract", "Ignoring invalid SpeakCommand: ${it.message}") }.getOrNull() ?: return
+        spoken = command; speakingNow = true
         if (screen != Screen.CAR_RADIO || vehicleDetail != null) navigate(Screen.CAR_RADIO) else render()
         say(command.text)
     }
@@ -93,7 +105,7 @@ class CarActivity : ScreenActivity() {
     private fun applyPlan(json: String) {
         runCatching { TripPlan.fromJson(json) }
             .onSuccess { plan = it; draft = it.draft; itineraryIds.clear(); itineraryIds.addAll(it.places.map(Place::id)) }
-            .onFailure { Log.w("ChagokContract", "Ignoring invalid TripPlan, showing sample trip", it) }
+            .onFailure { Log.w("ChagokContract", "Ignoring invalid TripPlan, showing sample trip: ${it.message}") }
     }
 
     override fun itineraryPlaces() = plan?.places ?: super.itineraryPlaces()
@@ -128,7 +140,7 @@ class CarActivity : ScreenActivity() {
                 text("차곡차곡 쌓인 오늘", 23)
                 text("214 km · 들른 곳 3곳 · 이야기 2개", 18)
                 text("예시 기록 · 실제 위치·사진은 연결 전", 12, muted)
-                text((repository.places + repository.radioPlace).filter { it.id in savedPlaces }
+                text(knownPlaces().filter { it.id in savedPlaces }.distinctBy { it.id }
                     .joinToString(" · ") { it.name }.ifEmpty { "아직 저장한 장소가 없어요." }, 15)
                 button("폰에서 기록 이어가기") { continueOnPhone() }
             }
@@ -156,12 +168,12 @@ class CarActivity : ScreenActivity() {
                 response(primary, "좋아, 출발하자") { emit(DriveEvent.Type.TRIP_STARTED); navigate(Screen.CAR_RADIO) }
             }
             Screen.CAR_RADIO -> {
-                spokenLine?.let {
+                spoken?.let {
                     status.text = if (speakingNow) "차곡이 이야기하고 있어요" else "차곡이 전한 이야기"
-                    line.text = it
-                    context.text = "${draft.destination} 가는 길 · 길 위의 라디오"
+                    line.text = it.text
+                    context.text = it.place?.let { p -> "${p.name} · ${p.distance}" } ?: "${draft.destination} 가는 길 · 길 위의 라디오"
                 }
-                response(primary, "이 장소 기억해 줘") { saveVehiclePlace(repository.radioPlace) }
+                response(primary, "이 장소 기억해 줘") { saveVehiclePlace(spoken?.place ?: repository.radioPlace) }
                 add(Button(this).apply {
                     text = "도착 화면 보기"; textSize = 12f; isAllCaps = false
                     setBackgroundColor(Color.TRANSPARENT); setTextColor(muted)
@@ -214,20 +226,21 @@ class CarActivity : ScreenActivity() {
 
     private fun continueOnPhone() { emit(DriveEvent.Type.TRIP_FINISHED); message("폰 앱에서 기록을 이어가요. 폰↔차량 연동은 연결 전이에요.") }
     private fun saveVehiclePlace(place: Place) { pendingPlace = place; savedPlaces.add(place.id); emit(DriveEvent.Type.PLACE_SAVED, place.id); navigate(Screen.CAR_APPROVAL) }
+    private fun knownPlaces() = repository.places + repository.radioPlace + plan?.places.orEmpty() + listOfNotNull(spoken?.place)
     private fun detourMinutes(place: Place) = when (place.id) { "anmok" -> 8; "gyeongpo" -> 18; else -> 12 }
 
     override fun onSaveInstanceState(out: Bundle) {
         out.putInt("discoveryIndex", discoveryIndex); out.putString("vehicleDetail", vehicleDetail)
-        out.putStringArrayList("saved", ArrayList(savedPlaces)); out.putString("pending", pendingPlace?.id); out.putString("plan", plan?.toJson()); out.putString("spoken", spokenLine)
+        out.putStringArrayList("saved", ArrayList(savedPlaces)); out.putString("pending", pendingPlace?.id); out.putString("plan", plan?.toJson()); out.putString("spoken", spoken?.toJson())
         super.onSaveInstanceState(out)
     }
     override fun restore(state: Bundle) {
         super.restore(state)
         state.getString("plan")?.let { plan = runCatching { TripPlan.fromJson(it) }.getOrNull() }
-        spokenLine = state.getString("spoken")
+        spoken = state.getString("spoken")?.let { runCatching { SpeakCommand.fromJson(it) }.getOrNull() }
         discoveryIndex = state.getInt("discoveryIndex", 0).coerceAtLeast(0)
         vehicleDetail = state.getString("vehicleDetail")?.takeIf { it == "schedule" || it == "record" }
         savedPlaces.addAll(state.getStringArrayList("saved").orEmpty())
-        pendingPlace = (repository.places + repository.radioPlace).find { it.id == state.getString("pending") }
+        pendingPlace = knownPlaces().find { it.id == state.getString("pending") }
     }
 }

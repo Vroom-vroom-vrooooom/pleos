@@ -18,7 +18,7 @@ Pleos Connect에서 돌아가는 차곡 차량 앱(C01~C05)입니다. 출발 인
 adb shell am start -n io.chagok.app.pleos/io.chagok.app.ui.CarActivity --es chagok.trip '<TripPlan JSON>'
 ```
 
-주행 중 이벤트는 `adb logcat -s ChagokContract`로 볼 수 있습니다. 백엔드가 보내는 "이 말 해" 명령(SpeakCommand)은 `--es chagok.speak '<JSON>'`으로 넣으면 차곡이 Pleos TTS로 읽습니다. 자세한 형식은 CONTRACT.md에 있습니다.
+QA는 [QA.md](QA.md)의 체크리스트와 `./qa.sh`(Git Bash)로 합니다: `./qa.sh install`, `./qa.sh start`, `./qa.sh speak "문장"`, `./qa.sh events`. 주행 중 이벤트는 `adb logcat -s ChagokContract`로도 볼 수 있습니다. 백엔드가 보내는 "이 말 해" 명령(SpeakCommand)은 `--es chagok.speak '<JSON>'`으로 넣으면 차곡이 Pleos TTS로 읽습니다. 자세한 형식은 CONTRACT.md에 있습니다.
 
 ## 구조
 

@@ -15,9 +15,13 @@ object TripContract {
     const val EXTRA_SPEAK = "chagok.speak"
 }
 
-/** Backend → Pleos: a line Chagok should say right now while the trip is running (C02 radio). */
-data class SpeakCommand(val tripId: String, val text: String) {
-    fun toJson(): String = JSONObject().put("v", TripContract.VERSION).put("tripId", tripId).put("text", text).toString()
+/**
+ * Backend → Pleos: a line Chagok should say right now while the trip is running (C02 radio).
+ * `place` (optional) is the place the line talks about; "이 장소 기억해 줘" then saves that place.
+ */
+data class SpeakCommand(val tripId: String, val text: String, val place: Place? = null) {
+    fun toJson(): String = JSONObject().put("v", TripContract.VERSION).put("tripId", tripId).put("text", text)
+        .apply { place?.let { put("place", it.toJson()) } }.toString()
 
     companion object {
         fun fromJson(json: String): SpeakCommand {
@@ -25,7 +29,7 @@ data class SpeakCommand(val tripId: String, val text: String) {
             require(o.getInt("v") == TripContract.VERSION) { "Unsupported SpeakCommand version ${o.getInt("v")}" }
             val text = o.getString("text").trim()
             require(text.isNotEmpty()) { "SpeakCommand text is empty" }
-            return SpeakCommand(o.getString("tripId"), text)
+            return SpeakCommand(o.getString("tripId"), text, o.optJSONObject("place")?.let(::placeFromJson))
         }
     }
 }

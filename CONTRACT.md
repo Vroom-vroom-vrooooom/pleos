@@ -69,7 +69,8 @@ Pleos 앱이 주행 중에 일어난 일을 하나씩 보냅니다. 폰은 이�
 여행 중(주행 중)에 백엔드가 "지금 이 말을 해"라고 보내는 명령입니다. Pleos 앱은 받는 즉시 라디오 화면(C02)으로 가서 문장을 띄우고, 구체를 말하는 상태로 바꾸고, Pleos TTS SDK(on-device)로 읽습니다. 다 읽으면 구체가 멈춥니다. 운전자가 "잠깐 쉬어 가자"를 누르면 바로 멈춥니다.
 
 ```json
-{"v": 1, "tripId": "demo-1731400000000", "text": "곧 왼쪽으로 설악산이 보여요. 오늘처럼 맑은 날엔 울산바위까지 보인대요."}
+{"v": 1, "tripId": "demo-1731400000000", "text": "곧 오른쪽으로 영랑호가 보여요. 호수 둘레길이 예쁘대요.",
+ "place": {"id": "yeongnangho", "name": "영랑호", "distance": "12분 추가"}}
 ```
 
 | 필드 | 필수 | 설명 |
@@ -77,6 +78,7 @@ Pleos 앱이 주행 중에 일어난 일을 하나씩 보냅니다. 폰은 이�
 | `v` | ✓ | 계약 버전. 지금은 `1` |
 | `tripId` | ✓ | 어느 여행에 대한 말인지. 백엔드가 차량을 찾는 데 씁니다 |
 | `text` | ✓ | 읽을 문장. 빈 문자열은 거절합니다. 운전 중에 듣는 말이므로 짧게(한두 문장) 보냅니다 |
+| `place` | | 이 말이 가리키는 장소(TripPlan의 place와 같은 모양). 있으면 문장 아래 장소 이름·거리를 보여 주고, "이 장소 기억해 줘"가 이 장소를 저장해 `PLACE_SAVED`로 돌려줍니다. 없으면 샘플 장소(경포대)를 씁니다 |
 
 새 명령이 오면 읽던 문장을 끊고 새 문장을 읽습니다. 음성 엔진을 쓸 수 없으면 글자만 보여 줍니다.
 
@@ -90,7 +92,7 @@ adb shell am start -n io.chagok.app.pleos/io.chagok.app.ui.CarActivity --es chag
 ```
 
 3. 차량 앱에서 버튼을 누르면 DriveEvent가 나옵니다: `adb logcat -s ChagokContract`.
-4. 앱이 떠 있는 상태에서 백엔드 대신 SpeakCommand를 넣습니다. 앱이 같은 화면에서 받아서 말합니다.
+4. 앱이 떠 있는 상태에서 백엔드 대신 SpeakCommand를 넣습니다. 앱이 같은 화면에서 받아서 말합니다. pleos 레포의 `./qa.sh speak "문장" ["장소"]`가 같은 일을 합니다(QA.md 참고).
 
 ```sh
 adb shell am start -n io.chagok.app.pleos/io.chagok.app.ui.CarActivity --es chagok.speak "'{\"v\":1,\"tripId\":\"demo\",\"text\":\"곧 왼쪽으로 설악산이 보여요.\"}'"
