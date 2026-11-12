@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android" android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:gravity="center_horizontal" android:padding="12dp">
+    <io.chagok.app.ui.CompanionOrbView android:id="@+id/companion_orb" android:layout_width="192dp" android:layout_height="192dp" />
+    <TextView android:id="@+id/companion_status" style="@style/Text.Body" android:textSize="11sp" android:gravity="center" android:text="@string/companion_radio_status" />
+    <TextView android:id="@+id/companion_line" style="@style/Text.Title" android:textSize="23sp" android:fontFamily="sans-serif" android:gravity="center" android:layout_marginTop="10dp" android:text="@string/companion_radio_line" android:lineSpacingExtra="5dp" />
+    <TextView android:id="@+id/companion_context" style="@style/Text.Body" android:textSize="12sp" android:gravity="center" android:layout_marginTop="8dp" android:text="@string/companion_radio_context" />
+    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:gravity="center" android:layout_marginTop="14dp">
+        <Button android:id="@+id/companion_secondary" style="@style/Button.Response" android:text="@string/companion_play" />
+        <Button android:id="@+id/companion_primary" style="@style/Button.Response" android:background="@drawable/bg_response_primary" android:layout_marginStart="8dp" android:text="@string/companion_save" />
+    </LinearLayout>
+</LinearLayout>

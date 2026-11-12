@@ -1,0 +1,13 @@
+.gradle/
+.idea/
+**/build/
+local.properties
+*.iml
+captures/
+.kotlin/
+
+node_modules/
+.env
+.env.*
+!.env.example
+*.log
