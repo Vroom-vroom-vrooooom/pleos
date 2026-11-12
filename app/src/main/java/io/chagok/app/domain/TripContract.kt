@@ -13,6 +13,8 @@ object TripContract {
     /** Intent extras the Pleos app accepts for local testing (adb). */
     const val EXTRA_TRIP = "chagok.trip"
     const val EXTRA_SPEAK = "chagok.speak"
+    /** Intent extra the phone app accepts for local testing (adb): one DriveEvent JSON. */
+    const val EXTRA_EVENT = "chagok.event"
 }
 
 /**

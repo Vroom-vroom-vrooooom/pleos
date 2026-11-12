@@ -10,7 +10,7 @@ import io.chagok.app.R
 import io.chagok.app.data.DemoTripRepository
 import io.chagok.app.domain.*
 
-/** Shared screen kit for the phone app (src/phone) and the car app (src/car). Screens live in each flavor. */
+/** Shared screen kit for the phone app (phone repo) and the Pleos app (pleos repo). Keep this file identical in both. */
 abstract class ScreenActivity : Activity() {
     protected val repository = DemoTripRepository()
     protected var draft = TripDraft()
@@ -77,7 +77,7 @@ abstract class ScreenActivity : Activity() {
     protected fun add(view: View) { content.addView(view, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(14) }) }
     protected fun integration(result: IntegrationResult, after: (() -> Unit)? = null) {
         val body = when (result) { is IntegrationResult.Demo -> result.message; is IntegrationResult.Unavailable -> result.message }
-        AlertDialog.Builder(this).setTitle("스켈레톤 미리보기").setMessage(body).setPositiveButton("확인") { _, _ -> after?.invoke() }.show()
+        AlertDialog.Builder(this).setTitle("데모 · 연동 전").setMessage(body).setPositiveButton("확인") { _, _ -> after?.invoke() }.show()
     }
     protected fun message(value: String) { Toast.makeText(this, value, Toast.LENGTH_SHORT).show() }
     protected fun dp(value: Int) = (value * resources.displayMetrics.density).toInt()

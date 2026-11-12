@@ -4,7 +4,7 @@
 
 | 레포 | 앱 | 화면 |
 |---|---|---|
-| `phone` | 폰 앱 `io.chagok.app.phone` | P01~P13: 여행 설정, 추천, 일정, 사진, 기록 |
+| `phone` | 폰 앱 `io.chagok.app.phone` | P01~P15: 여행 설정, 추천, 일정, 사진, 기록, MY, 한눈에 모아보기 |
 | `pleos` | Pleos 차량 앱 `io.chagok.app.pleos` | C01~C05: 출발 인사, 라디오, 경유지 승인, 발견, 마무리 |
 
 두 앱과 백엔드가 주고받는 것은 아래 세 메시지뿐입니다. 정의는 `app/src/main/java/io/chagok/app/domain/TripContract.kt`이고, **이 파일과 이 문서는 두 레포에서 항상 똑같아야 합니다.** 바꿀 때는 두 레포에 같은 변경을 함께 올리고, 필드 의미가 바뀌면 `VERSION`을 올립니다. 받는 쪽은 모르는 버전을 거절합니다.
@@ -98,4 +98,12 @@ adb shell am start -n io.chagok.app.pleos/io.chagok.app.ui.CarActivity --es chag
 adb shell am start -n io.chagok.app.pleos/io.chagok.app.ui.CarActivity --es chagok.speak "'{\"v\":1,\"tripId\":\"demo\",\"text\":\"곧 왼쪽으로 설악산이 보여요.\"}'"
 ```
 
-잘못된 JSON이나 다른 버전이 들어오면 Pleos 앱은 경고 로그를 남기고 샘플 여행을 보여 줍니다.
+5. 3번에서 나온 DriveEvent JSON을 폰 에뮬레이터의 폰 앱에 하나씩 넣습니다. 폰 앱이 켜져 있으면 그대로 받고, P12 기록의 "차에서 남긴 기록"에 장소가 쌓입니다. `TRIP_FINISHED`를 받으면 P12로 이동합니다.
+
+```sh
+adb shell am start -n io.chagok.app.phone/io.chagok.app.ui.PhoneActivity --es chagok.event '<DriveEvent JSON>'
+```
+
+폰 앱은 가장 최근 `tripId`의 이벤트만 모읍니다. 다른 `tripId`가 오면 새 기록으로 시작합니다.
+
+잘못된 JSON이나 다른 버전이 들어오면 Pleos 앱은 경고 로그를 남기고 샘플 여행을 보여 주고, 폰 앱은 경고 로그를 남기고 그 이벤트를 무시합니다.
