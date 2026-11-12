@@ -4,7 +4,7 @@
 
 | 레포 | 앱 | 화면 |
 |---|---|---|
-| `phone` | 폰 앱 `io.chagok.app.phone` | P01~P15: 여행 설정, 추천, 일정, 사진, 기록, MY, 한눈에 모아보기 |
+| `phone` | 폰 앱 `io.chagok.app.phone` | P01~P16: 여행 설정, 추천, 일정, 사진, 기록, MY, 한눈에 모아보기, 지난 여행 |
 | `pleos` | Pleos 차량 앱 `io.chagok.app.pleos` | C01~C05: 출발 인사, 라디오, 경유지 승인, 발견, 마무리 |
 
 두 앱과 백엔드가 주고받는 것은 아래 세 메시지뿐입니다. 정의는 `app/src/main/java/io/chagok/app/domain/TripContract.kt`이고, **이 파일과 이 문서는 두 레포에서 항상 똑같아야 합니다.** 바꿀 때는 두 레포에 같은 변경을 함께 올리고, 필드 의미가 바뀌면 `VERSION`을 올립니다. 받는 쪽은 모르는 버전을 거절합니다.
