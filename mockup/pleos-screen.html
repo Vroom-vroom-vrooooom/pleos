@@ -1,0 +1,278 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pleos 화면 목업</title>
+<!--
+  Pleos Connect 2.1.0 에뮬레이터(2560×1440) 화면을 좌표 그대로 옮긴 목업.
+  Pleos가 그리는 곳: 상태바(오른쪽 위), DrivingView(왼쪽), 독(아래). 차곡이 그리는 곳: 오른쪽 앱 칸 하나.
+  오른쪽 앱 칸은 내비와 차곡이 번갈아 씀(동시에 안 뜸). 왼쪽 차량 그림은 실제 렌더 대신 단순 실루엣.
+-->
+<style>
+  :root { --ink:#243e37; --muted:#717e70; --paper:#fdfdfb; --line:#d9d9d9; }
+  * { box-sizing:border-box; margin:0; }
+  html, body { height:100%; background:#1d1f22; color:#eee; font-family:"Noto Sans KR","Apple SD Gothic Neo","Malgun Gothic",system-ui,sans-serif; overflow:hidden; }
+  #bar { height:56px; display:flex; gap:8px; align-items:center; padding:0 16px; background:#2a2d31; flex-wrap:nowrap; overflow-x:auto; }
+  #bar button, #bar input { font:inherit; font-size:14px; border-radius:8px; border:1px solid #555; background:#3a3e44; color:#eee; padding:7px 12px; white-space:nowrap; }
+  #bar button.on { background:#e6e2c8; color:#222; border-color:#e6e2c8; }
+  #bar input { flex:1; min-width:220px; background:#1f2226; }
+  #bar .sep { width:1px; height:28px; background:#555; }
+  #stage { position:absolute; top:56px; left:0; right:0; bottom:0; display:grid; place-items:center; }
+  #screen { position:absolute; width:2560px; height:1440px; transform-origin:top left; background:#fff; color:#111; overflow:hidden; }
+
+  .abs { position:absolute; }
+  .t { position:absolute; white-space:nowrap; }
+  /* Pleos DrivingView (left) */
+  #drive { left:0; top:0; width:853px; height:1300px; background:#fff; border-right:1px solid #e5e5e5; }
+  .pbox { background:#222; color:#fff; width:48px; height:48px; display:grid; place-items:center; font-size:30px; }
+  /* Pleos status bar */
+  #status { left:853px; top:0; width:1707px; height:90px; background:#f6f6f6; border:1px solid #cfcfcf; }
+  /* right edge handle */
+  #edge { left:2535px; top:90px; width:25px; height:1210px; background:#fafafa; }
+  #edge i { position:absolute; left:8px; width:8px; height:8px; background:#111; }
+  /* Pleos dock */
+  #dock { left:0; top:1300px; width:2560px; height:140px; background:#000; color:#fff; }
+  .dk { position:absolute; top:32px; width:76px; height:76px; display:grid; place-items:center; font-size:38px; border:0; color:#fff; background:transparent; cursor:pointer; padding:0; }
+  .dk.boxed { background:#3c3c3c; }
+  .dk.active::after { content:""; position:absolute; left:0; right:0; bottom:-24px; height:8px; background:#f39c12; }
+  .dkt { position:absolute; top:44px; font-size:44px; }
+
+  /* App slot (the only area Chagok draws) */
+  #slot { left:853px; top:90px; width:1682px; height:1210px; overflow:hidden; }
+  .app { position:absolute; inset:0; display:none; }
+  .app.show { display:block; }
+
+  /* Pleos navigation app (placeholder of the built-in navi) */
+  #navi { background:#f6f7fa; }
+  .nbtn { position:absolute; width:100px; background:#fff; border:1px solid #ddd; display:grid; place-items:center; font-size:34px; color:#111; }
+
+  /* Chagok car app, drawn at 2× like CarActivity (xhdpi on Pleos) */
+  #chagok { background:var(--paper); color:var(--ink); }
+  #chagok .hdr { position:absolute; left:40px; right:40px; top:18px; height:88px; display:flex; align-items:center; }
+  #chagok .hdr b { font-size:40px; font-weight:500; flex:1; }
+  #chagok .hdr span { font-size:24px; color:var(--muted); }
+  #panel { position:absolute; left:40px; right:40px; top:106px; bottom:96px; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; }
+  #orb { width:384px; height:384px; border-radius:50%; cursor:pointer;
+         background:conic-gradient(from 200deg,#efd4d8,#e6cff3,#cfe6f0,#d6f1e2,#f5f0cf,#efd4d8); filter:blur(.4px) saturate(.9);
+         box-shadow:0 0 0 0 rgba(200,190,230,.0); transition:transform .3s; }
+  #orb.speaking { animation:pulse 1.1s ease-in-out infinite; }
+  @keyframes pulse { 0%,100% { transform:scale(1); box-shadow:0 0 0 0 rgba(205,190,235,.45);} 50% { transform:scale(1.06); box-shadow:0 0 0 40px rgba(205,190,235,0);} }
+  #status-line { margin-top:36px; font-size:22px; color:var(--muted); }
+  #line { margin-top:20px; font-size:46px; line-height:1.38; white-space:pre-line; max-width:1500px; }
+  #ctx { margin-top:16px; font-size:24px; color:var(--muted); }
+  #resp { margin-top:28px; width:100%; display:flex; gap:16px; }
+  #resp button { flex:1; height:96px; border-radius:48px; font:inherit; font-size:28px; color:var(--ink); background:#f6f7f1; border:2px solid #e3e6da; cursor:pointer; }
+  #resp button.primary { background:#e8eedf; border-color:#d6dfca; }
+  #sub { margin-top:40px; font-size:24px; color:var(--muted); background:none; border:0; font-family:inherit; cursor:pointer; }
+  #cnav { position:absolute; left:40px; right:40px; bottom:0; height:96px; display:flex; }
+  #cnav button { flex:1; background:none; border:0; font:inherit; font-size:28px; color:var(--ink); cursor:pointer; }
+
+  /* "who draws what" overlay */
+  .zone { position:absolute; display:none; pointer-events:none; font-size:30px; font-weight:700; padding:14px 18px; align-items:flex-start; }
+  body.zones .zone { display:flex; }
+  .zone span { background:rgba(255,255,255,.92); padding:6px 14px; border-radius:8px; box-shadow:0 2px 8px rgba(0,0,0,.15); }
+  .zone.pleos { background:rgba(230,80,60,.13); outline:4px dashed rgba(220,70,50,.8); outline-offset:-4px; color:#b23a2a; }
+  .zone.ours { background:rgba(40,160,90,.10); outline:6px solid rgba(30,150,80,.9); outline-offset:-6px; color:#17803f; }
+</style>
+</head>
+<body>
+<div id="bar">
+  <button id="b-chagok" class="on">차곡 띄우기</button>
+  <button id="b-navi">내비 띄우기</button>
+  <span class="sep"></span>
+  <button id="b-zones">누가 그리나 표시</button>
+  <span class="sep"></span>
+  <input id="speak-text" value="곧 오른쪽으로 영랑호가 보여요. 호수 둘레길이 예쁘대요." aria-label="SpeakCommand 문장">
+  <button id="b-speak">백엔드 SpeakCommand 보내기</button>
+  <button id="b-reset">처음부터</button>
+</div>
+<div id="stage"><div id="screen">
+
+  <!-- Pleos DrivingView -->
+  <div id="drive" class="abs">
+    <div class="abs" style="left:24px;top:30px;width:72px;height:32px;background:#222"></div>
+    <div class="abs" style="left:100px;top:38px;width:4px;height:16px;background:#999"></div>
+    <div class="t" style="left:117px;top:26px;font-size:30px">500<small style="font-size:24px"> km</small></div>
+    <div class="t" style="left:382px;top:26px;font-size:30px;color:#aaa">0<small style="font-size:24px"> km/h</small></div>
+    <div class="abs pbox" style="left:681px;top:21px">P</div>
+    <div class="t" style="left:742px;top:26px;font-size:30px;color:#aaa;letter-spacing:8px">RND</div>
+    <div class="t" style="left:766px;top:100px;font-size:30px;color:#999">◒<br>--</div>
+    <svg class="abs" style="left:300px;top:80px" width="270" height="170" viewBox="0 0 270 170" aria-hidden="true">
+      <path d="M10 160 L170 40" stroke="#ddd" stroke-width="40" stroke-linecap="round"/>
+      <rect x="60" y="90" width="70" height="50" rx="6" fill="#e6e6e6" transform="rotate(-35 95 115)"/>
+      <path d="M120 70 L250 10" stroke="#7aa8f5" stroke-width="44" stroke-linecap="round" opacity=".55"/>
+      <rect x="125" y="40" width="70" height="60" rx="8" fill="#4d8cf5" transform="rotate(-35 160 70)"/>
+    </svg>
+    <div class="t" style="left:0;width:853px;text-align:center;top:250px;font-size:24px;color:#333">안전 벨트를 매세요.</div>
+    <svg class="abs" style="left:150px;top:520px" width="560" height="360" viewBox="0 0 560 360" aria-label="차량 실루엣(자리 표시)">
+      <ellipse cx="280" cy="330" rx="250" ry="22" fill="#eee"/>
+      <path d="M30 230 Q40 170 120 150 L190 80 Q220 55 300 55 L390 60 Q440 70 470 120 L520 170 Q545 190 540 240 L530 280 L40 290 Z" fill="#d4d6d9"/>
+      <path d="M205 92 L300 70 L385 75 L430 125 L220 140 Z" fill="#2b2d30"/>
+      <circle cx="140" cy="290" r="48" fill="#222"/><circle cx="140" cy="290" r="22" fill="#888"/>
+      <circle cx="450" cy="285" r="48" fill="#222"/><circle cx="450" cy="285" r="22" fill="#888"/>
+    </svg>
+    <div class="t" style="left:170px;top:990px;font-size:52px;color:#222">⟲</div>
+    <div class="t" style="left:315px;top:990px;font-size:52px;color:#bbb">⟳</div>
+    <div class="t" style="left:465px;top:990px;font-size:52px;color:#222">⚡</div>
+    <div class="t" style="left:612px;top:990px;font-size:52px;color:#222">▭↓</div>
+    <div class="abs" style="left:0;top:1120px;width:853px;height:1px;background:#ddd"></div>
+    <div class="abs" style="left:20px;top:1158px;width:104px;height:104px;background:#f0f0f0;display:grid;place-items:center;font-size:48px">♪</div>
+    <div class="t" style="left:144px;top:1192px;font-size:26px">재생 중인 항목 없음</div>
+    <div class="t" style="left:548px;top:1180px;font-size:44px">⏮</div>
+    <div class="t" style="left:658px;top:1180px;font-size:44px">▶</div>
+    <div class="t" style="left:765px;top:1180px;font-size:44px">⏭</div>
+    <div class="abs" style="left:392px;top:1280px;width:24px;height:7px;background:#333"></div>
+    <div class="abs" style="left:426px;top:1280px;width:8px;height:7px;background:#999"></div>
+    <div class="abs" style="left:444px;top:1280px;width:8px;height:7px;background:#999"></div>
+    <div class="abs" style="left:462px;top:1280px;width:8px;height:7px;background:#999"></div>
+  </div>
+
+  <!-- Pleos status bar -->
+  <div id="status" class="abs">
+    <div class="t" style="left:40px;top:20px;font-size:40px">🔒︎</div>
+    <div class="t" style="left:125px;top:18px;font-size:40px">⌕</div>
+    <div class="abs" style="left:1275px;top:17px;width:56px;height:56px;border-radius:50%;border:1px solid #ddd;display:grid;place-items:center;font-size:28px;color:#a03cc0;background:#fff">운</div>
+    <div class="t" style="left:1377px;top:22px;font-size:36px">ᛒ</div>
+    <div class="t" style="left:1460px;top:18px;font-size:36px">◠</div>
+    <div class="abs" style="left:1532px;top:30px;width:1px;height:30px;background:#bbb"></div>
+    <div id="clock" class="t" style="right:16px;top:24px;font-size:30px">07:57 오전</div>
+  </div>
+
+  <!-- App slot: Pleos navi OR Chagok, one at a time -->
+  <div id="slot" class="abs">
+    <div id="navi" class="app">
+      <div class="nbtn" style="left:1558px;top:24px;height:100px;font-size:30px;font-weight:700;line-height:1">2D<br>▲</div>
+      <div class="abs" style="left:24px;top:969px;width:580px;height:216px;border:1px solid #ddd;background:#fff">
+        <div style="height:104px;background:#000;color:#bbb;font-size:32px;display:flex;align-items:center;gap:20px;padding:0 30px">⌕ 어디로 갈까요?</div>
+        <div style="height:112px;display:flex;align-items:center;justify-content:space-around;font-size:40px;color:#888"><span>⌂</span><span>▦</span><span style="color:#111">★</span><span style="color:#111">⚡</span></div>
+      </div>
+      <div class="abs" style="left:798px;top:956px;width:86px;height:86px;border-radius:50%;border:5px solid #1e8bff;display:grid;place-items:center;color:#1e8bff;font-size:40px">▲</div>
+      <div class="abs" style="left:754px;top:1123px;width:174px;height:62px;background:#fff;border:1px solid #ddd;display:grid;place-items:center;font-size:24px">수정구 시흥동</div>
+      <div class="nbtn" style="left:1558px;top:987px;height:100px">🔈︎</div>
+      <div class="nbtn" style="left:1558px;top:1086px;height:100px">⚙︎</div>
+    </div>
+
+    <div id="chagok" class="app show">
+      <div class="hdr"><b>차곡</b><span id="dest">속초</span></div>
+      <div id="panel">
+        <div id="orb" title="구체를 누르면 말하는 모습"></div>
+        <div id="status-line"></div>
+        <div id="line"></div>
+        <div id="ctx"></div>
+        <div id="resp"><button id="r2"></button><button id="r1" class="primary"></button></div>
+        <button id="sub"></button>
+      </div>
+      <div id="cnav"><button data-go="schedule">오늘 일정</button><button data-go="discover">주변 발견</button><button data-go="summary">여행 기록</button></div>
+    </div>
+  </div>
+  <div id="edge" class="abs"><i style="top:604px"></i><i style="top:624px"></i><i style="top:644px"></i></div>
+
+  <!-- Pleos dock -->
+  <div id="dock" class="abs">
+    <div class="dkt" style="left:58px;color:#1e6bff">⌄</div>
+    <div class="dkt" style="left:140px;color:#777;font-size:40px">✻꺼짐</div>
+    <div class="dkt" style="left:306px;color:#e33">⌃</div>
+    <div class="dkt" style="left:405px">♨</div>
+    <div class="dkt" style="left:530px">⛺︎</div>
+    <div class="dkt" style="left:640px">◎</div>
+    <button class="dk boxed" style="left:1001px" title="차량">🚘︎</button>
+    <button id="d-navi" class="dk boxed" style="left:1117px" title="내비게이션">▲</button>
+    <button class="dk boxed" style="left:1233px" title="전화">✆</button>
+    <button class="dk" style="left:1349px" title="앱 목록">▦</button>
+    <div class="abs" style="left:1455px;top:52px;width:1px;height:36px;background:#555"></div>
+    <button id="d-chagok" class="dk active" style="left:1483px;background:#2d4a3e" title="차곡 (최근 앱)">≋</button>
+    <div class="dkt" style="left:1862px">♨</div>
+    <div class="dkt" style="left:1975px;color:#2ecc40">⛟</div>
+    <div class="dkt" style="left:2095px">A↗</div>
+    <div class="dkt" style="left:2215px;color:#1e6bff">⌄</div>
+    <div class="dkt" style="left:2300px;color:#777;font-size:40px">✻꺼짐</div>
+    <div class="dkt" style="left:2468px;color:#e33">⌃</div>
+  </div>
+
+  <!-- who draws what -->
+  <div class="zone pleos" style="left:0;top:0;width:853px;height:1300px"><span>Pleos · DrivingView</span></div>
+  <div class="zone pleos" style="left:853px;top:0;width:1707px;height:90px"><span>Pleos · 시스템 상태바 (우리가 안 그림)</span></div>
+  <div class="zone pleos" style="left:0;top:1300px;width:2560px;height:140px;align-items:center"><span>Pleos · 독</span></div>
+  <div class="zone ours" style="left:853px;top:90px;width:1682px;height:1210px;justify-content:flex-end"><span>앱 칸 1682×1210 · 차곡 또는 내비 중 하나만</span></div>
+</div></div>
+
+<script>
+const $ = id => document.getElementById(id);
+const sample = { dest:"속초", count:2, who:"친구", mood:"활기찬" };
+let view = "ready", spoken = null, speaking = false, saved = [];
+
+function fit() {
+  const s = Math.min(innerWidth / 2560, (innerHeight - 56) / 1440);
+  const el = $("screen"); el.style.transform = `scale(${s})`;
+  el.style.left = (innerWidth - 2560 * s) / 2 + "px"; el.style.top = Math.max(0, (innerHeight - 56 - 1440 * s) / 2) + "px";
+}
+addEventListener("resize", fit); fit();
+
+function front(app) { // the app slot holds one app at a time
+  $("navi").classList.toggle("show", app === "navi"); $("chagok").classList.toggle("show", app === "chagok");
+  $("d-navi").classList.toggle("active", app === "navi"); $("d-chagok").classList.toggle("active", app === "chagok");
+  $("b-navi").classList.toggle("on", app === "navi"); $("b-chagok").classList.toggle("on", app === "chagok");
+}
+
+function set(status, line, ctx, r2, r1, sub) {
+  $("status-line").textContent = status; $("line").textContent = line; $("ctx").textContent = ctx;
+  const b2 = $("r2"), b1 = $("r1");
+  b2.textContent = r2[0]; b2.onclick = r2[1]; b1.textContent = r1[0]; b1.onclick = r1[1];
+  $("sub").textContent = sub ? sub[0] : ""; $("sub").onclick = sub ? sub[1] : null; $("sub").style.visibility = sub ? "visible" : "hidden";
+}
+
+function render() {
+  $("orb").classList.toggle("speaking", speaking);
+  $("dest").textContent = view === "summary" ? "오늘의 기록" : sample.dest;
+  if (view === "ready") set("오늘의 여정을 준비했어요", `${sample.dest}에서 만날 ${sample.count}곳의 이야기,\n함께 떠나 볼까요?`, `${sample.who} · ${sample.mood} 분위기로 준비했어요.`,
+    ["어디로 가는지 알려줘", () => go("schedule")], ["좋아, 출발하자", () => go("radio")]);
+  else if (view === "radio") {
+    const place = spoken?.place;
+    set(spoken ? (speaking ? "차곡이 이야기하고 있어요" : "차곡이 전한 이야기") : "지금, 차창 밖에서 발견한 이야기",
+      spoken ? spoken.text : "저 바다를 보면 떠오르는\n여행이 있으세요?",
+      place ? `${place} · 12분 추가` : (spoken ? `${sample.dest} 가는 길 · 길 위의 라디오` : "옆으로 지나가는 경포대, 잠깐의 이야기를 건네 볼게요."),
+      [speaking ? "잠깐 쉬어 가자" : "말하는 모습 보기", toggleSpeak], ["이 장소 기억해 줘", () => { saved.push(place || "경포대"); go("approval"); }],
+      ["도착 화면 보기", () => go("summary")]);
+  } else if (view === "approval") set("마음에 담아 두었어요", `${saved.at(-1)}에\n잠깐 들렀다 갈까요?`, "경유지로 추가하면 12분 더 걸려요. · 예시",
+    ["다음에 가자", () => go("radio")], ["응, 들렀다 가자", () => go("radio")]);
+  else if (view === "discover") set("이런 곳은 어떠세요?", "아바이마을에서\n조금 쉬어 가도 좋겠어요.", "저장한 릴스 1개 · 2 km · 6분",
+    ["다른 곳도 알려줘", () => {}], ["여기 마음에 들어", () => { saved.push("아바이마을"); go("approval"); }]);
+  else if (view === "schedule") set("오늘의 작은 여행", "11:00   아바이마을\n13:00   영금정", `2026-12-01 · ${sample.dest} · ${sample.mood}`,
+    ["차곡으로 돌아가기", () => go("ready")], ["차곡과 출발하기", () => go("radio")]);
+  else if (view === "summary") set("오늘도 함께해 줘서 고마워요", "오늘, 가장 오래 기억하고 싶은\n순간은 무엇인가요?", `함께 달린 214 km · 저장한 곳: ${saved.join(" · ") || "없음"}`,
+    ["오늘을 돌아볼래", () => {}], ["사진으로 남겨 볼래", () => {}]);
+}
+function go(v) { view = v; render(); }
+
+function stopVoice() { try { speechSynthesis.cancel(); } catch (e) {} }
+function toggleSpeak() { if (speaking) { stopVoice(); speaking = false; } else speaking = true; render(); }
+
+// Backend → Pleos SpeakCommand. Same behaviour as the app today: Chagok comes to the front, goes to C02 and speaks.
+function speak(text) {
+  const t = text.trim(); if (!t) return;
+  const m = t.match(/^(.{2,12}?)(이|가)\s/); // ponytail: guess the place name from "X가 보여요" for the demo only
+  spoken = { text: t, place: m ? m[1].replace(/^곧\s*(왼쪽|오른쪽)?으로\s*/, "") : null };
+  front("chagok"); view = "radio"; speaking = true; render();
+  try {
+    stopVoice(); const u = new SpeechSynthesisUtterance(t); u.lang = "ko-KR";
+    u.onend = u.onerror = () => { speaking = false; render(); }; speechSynthesis.speak(u);
+  } catch (e) { setTimeout(() => { speaking = false; render(); }, 3000); }
+}
+
+$("orb").onclick = toggleSpeak;
+document.querySelectorAll("#cnav button").forEach(b => b.onclick = () => go(b.dataset.go));
+$("b-chagok").onclick = $("d-chagok").onclick = () => front("chagok");
+$("b-navi").onclick = $("d-navi").onclick = () => front("navi");
+$("b-zones").onclick = () => $("b-zones").classList.toggle("on", document.body.classList.toggle("zones"));
+$("b-speak").onclick = () => speak($("speak-text").value);
+$("speak-text").onkeydown = e => { if (e.key === "Enter") speak($("speak-text").value); };
+$("b-reset").onclick = () => { stopVoice(); spoken = null; speaking = false; saved = []; front("chagok"); go("ready"); };
+setInterval(() => { const d = new Date(); $("clock").textContent = d.toLocaleTimeString("ko-KR", { hour:"2-digit", minute:"2-digit" }).replace(/^(오전|오후) (.*)$/, "$2 $1"); }, 1000);
+render();
+// #zones, #navi in the URL open the page in that state (handy for sharing a link or screenshot).
+if (location.hash.includes("zones")) $("b-zones").click();
+if (location.hash.includes("navi")) front("navi");
+</script>
+</body>
+</html>
