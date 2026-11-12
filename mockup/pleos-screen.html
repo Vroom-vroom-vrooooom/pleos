@@ -49,10 +49,7 @@
 
   /* Chagok car app, drawn at 2× like CarActivity (xhdpi on Pleos) */
   #chagok { background:var(--paper); color:var(--ink); }
-  #chagok .hdr { position:absolute; left:40px; right:40px; top:18px; height:88px; display:flex; align-items:center; }
-  #chagok .hdr b { font-size:40px; font-weight:500; flex:1; }
-  #chagok .hdr span { font-size:24px; color:var(--muted); }
-  #panel { position:absolute; left:40px; right:40px; top:106px; bottom:96px; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; }
+  #panel { position:absolute; left:40px; right:40px; top:0; bottom:96px; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; }
   #orb { width:384px; height:384px; border-radius:50%; cursor:pointer;
          background:conic-gradient(from 200deg,#efd4d8,#e6cff3,#cfe6f0,#d6f1e2,#f5f0cf,#efd4d8); filter:blur(.4px) saturate(.9);
          box-shadow:0 0 0 0 rgba(200,190,230,.0); transition:transform .3s; }
@@ -154,7 +151,6 @@
     </div>
 
     <div id="chagok" class="app show">
-      <div class="hdr"><b>차곡</b><span id="dest">속초</span></div>
       <div id="panel">
         <div id="orb" title="구체를 누르면 말하는 모습"></div>
         <div id="status-line"></div>
@@ -224,7 +220,6 @@ function set(status, line, ctx, r2, r1, sub) {
 
 function render() {
   $("orb").classList.toggle("speaking", speaking);
-  $("dest").textContent = view === "summary" ? "오늘의 기록" : sample.dest;
   if (view === "ready") set("오늘의 여정을 준비했어요", `${sample.dest}에서 만날 ${sample.count}곳의 이야기,\n함께 떠나 볼까요?`, `${sample.who} · ${sample.mood} 분위기로 준비했어요.`,
     ["어디로 가는지 알려줘", () => go("schedule")], ["좋아, 출발하자", () => go("radio")]);
   else if (view === "radio") {
