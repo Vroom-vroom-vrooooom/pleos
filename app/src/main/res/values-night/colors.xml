@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Car design v4, dark (차량 다크). Same names as values/colors.xml c_*; Pleos night mode picks this file. -->
+<resources>
+    <color name="c_s0">#0F1318</color>
+    <color name="c_s1">#1A2028</color>
+    <color name="c_s2">#232A34</color>
+    <color name="c_s3">#2F3844</color>
+    <color name="c_tx">#F3F5F8</color>
+    <color name="c_mu">#9AA4B2</color>
+    <color name="c_inv">#F3F5F8</color>
+    <color name="c_on_inv">#101317</color>
+</resources>

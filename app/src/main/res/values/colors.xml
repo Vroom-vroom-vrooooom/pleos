@@ -1,14 +1,19 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <!-- ScreenActivity (shared with the phone repo) -->
     <color name="paper">#F8F7F2</color>
     <color name="card">#FFFEF8</color>
     <color name="ink">#243E37</color>
     <color name="muted">#717E70</color>
     <color name="line">#E2E6D9</color>
     <color name="sage">#E8EDDF</color>
-    <color name="accent">#AA6744</color>
-    <color name="deep">#2E5440</color>
-    <color name="leaf">#E2ECD8</color>
-    <color name="hairline">#EBE9E1</color>
-    <color name="soft_ink">#83907F</color>
+    <!-- Car design v4, light (차량 라이트); dark in values-night. Accent = inv (the design accent equals inv). -->
+    <color name="c_s0">#F3F4F6</color>
+    <color name="c_s1">#FFFFFF</color>
+    <color name="c_s2">#EEF0F2</color>
+    <color name="c_s3">#E1E4E8</color>
+    <color name="c_tx">#101317</color>
+    <color name="c_mu">#5B636E</color>
+    <color name="c_inv">#101317</color>
+    <color name="c_on_inv">#FFFFFF</color>
 </resources>
