@@ -29,7 +29,7 @@
   "density": "보통",
   "places": [
     {"id": "anmok", "name": "안목 커피거리", "time": "10:30", "duration": "60분",
-     "source": "저장한 릴스 2개", "group": "저장", "reason": "부모님 · 잔잔한 분위기에 맞아요", "distance": "3.2 km · 8분"}
+     "source": "좋아요한 쇼츠 2개", "group": "좋아요", "reason": "부모님 · 잔잔한 분위기에 맞아요", "distance": "3.2 km · 8분"}
   ]
 }
 ```

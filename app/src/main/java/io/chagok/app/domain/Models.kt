@@ -4,7 +4,7 @@ enum class Screen(val board: String, val title: String, val vehicle: Boolean = f
     HOME("P01", "여행"), START("P02", "무엇을 할까요?"),
     DESTINATION("P03", "어디로 갈까요?"), COMPANIONS("P04", "누구와 함께 가나요?"),
     INTERESTS("P05", "무엇에 끌리나요?"), MOOD("P06", "어떤 분위기가 좋아요?"),
-    IMPORT("P07", "저장한 영상에서 찾아볼까요?"), RECOMMENDATIONS("P08", "추천"),
+    IMPORT("P07", "유튜브에서 찾아볼까요?"), RECOMMENDATIONS("P08", "추천"),
     ITINERARY("P09", "여행 일정"), ARRIVAL("P10", "장소에 도착했어요"),
     PHOTOS("P11", "사진 고르기"), TIMELINE("P12", "기록"), SUMMARY("P13", "여행 요약"),
     MY("P14", "MY"), RECAP("P15", "한눈에 모아보기"), PAST("P16", "지난 여행 돌아보기"),

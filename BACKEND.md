@@ -7,8 +7,8 @@
 | 1 | 계정·기기 | 로그인, 사용자별 폰·차량 기기 등록과 페어링 | 신규 |
 | 1 | 여행 저장 | 여행 설정(목적지·날짜·동승자·관심사 최대 3개·분위기·일정 밀도·이동 기록 여부·공개 범위) CRUD, 일정(장소 순서) 저장 | P03~P06, P09 · `TripDraft` |
 | 1 | 폰↔Pleos 중계 | 폰의 `TripPlan`을 Pleos로 전달(서버 푸시 또는 차량이 조회), Pleos의 `DriveEvent`를 폰으로 전달. 메시지 형식은 CONTRACT.md 그대로 | P09 → C01, C02~C05 → P10~P13 · `TripTransferPort.stageTrip` |
-| 2 | 장소 추천 | 관심사·분위기·동승자·거리 기준 후보, 추천 이유, 출처(저장/좋아요/받은 영상) 반환 | P08, C04 · `Place` |
-| 2 | 영상 가져오기 | YouTube OAuth, 공유 링크 수신, 내보내기 파일 분석 → 영상 속 장소 추출. 인스타 직접 연동은 미지원 | P07 · `MediaImportPort.importFrom` |
+| 2 | 장소 추천 | 관심사·분위기·동승자·거리 기준 후보, 추천 이유, 출처(유튜브 좋아요/재생목록/구독, 공유 링크) 반환. `group`은 `좋아요`·`재생목록`·`구독`·`공유` | P08, C04 · `Place` |
+| 2 | 영상 가져오기 | YouTube Data API(OAuth, `youtube.readonly`): 좋아요한 영상·내 재생목록·구독 채널 영상 → 영상 속 장소 추출. 공유 링크 수신(어느 앱이든). 시청 기록·나중에 볼 동영상은 API로 못 읽어 Google 테이크아웃 파일로만. 인스타는 연동하지 않음 | P07 · `MediaImportPort.importFrom` |
 | 2 | 경유지 | 주행 중 저장·승인한 장소를 여행에 반영, 추가 소요 시간 계산. 실제 경로 변경은 차량 앱의 Pleos SDK가 담당 | C03 · `NavigationPort.requestWaypoint` |
 | 3 | 라디오 콘텐츠 | 경로 주변 지역 이야기 스크립트 생성, 알맞은 때 Pleos로 `SpeakCommand` 전송(차량이 TTS로 읽음), 언급 장소 연결 | C02 · CONTRACT.md 3번 |
 | 3 | 기록 | 방문 기록, 사진 업로드·보관, 사진 시간·위치로 타임라인 매칭 | P10~P12 |
