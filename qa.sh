@@ -5,6 +5,7 @@
 #   ./qa.sh split                       force the half window: navi left, Chagok right
 #   ./qa.sh speak "문장" ["장소 이름"]    send a backend SpeakCommand (optionally about a place)
 #   ./qa.sh bad                         send a broken SpeakCommand (app must ignore it)
+#   ./qa.sh call | hangup               incoming phone call on / off (Chagok must pause, then re-read)
 #   ./qa.sh arrive                      pretend the navi reached the destination (arrival summary)
 #   ./qa.sh events                      watch TripPlan / DriveEvent / warnings live (Ctrl+C to stop)
 #   ./qa.sh shot [name]                 save a screenshot to qa-shots/
@@ -20,7 +21,8 @@ if [ -z "$ADB" ]; then
 fi
 [ -n "$ADB" ] || { echo "adb not found. Set ADB=/path/to/adb" >&2; exit 1; }
 # With a phone also connected (relay.sh), talk to the Pleos emulator unless ANDROID_SERIAL says otherwise.
-export ANDROID_SERIAL="${ANDROID_SERIAL:-$("$ADB" devices | tr -d '' | awk '$2=="device" && $1 ~ /^emulator-/ {print $1; exit}')}"
+export ANDROID_SERIAL="${ANDROID_SERIAL:-$("$ADB" devices | tr -d '
+' | awk '$2=="device" && $1 ~ /^emulator-/ {print $1; exit}')}"
 APP=io.chagok.app.pleos/io.chagok.app.ui.CarActivity
 TRIP_ID=qa-trip
 
@@ -68,6 +70,10 @@ case "${1:-}" in
   arrive)
     # Pretend the navi reported the destination (QA only): shows the arrival summary and sends TRIP_FINISHED.
     "$ADB" shell am broadcast -a io.chagok.app.pleos.ARRIVE -p io.chagok.app.pleos >/dev/null && echo "sent arrive" ;;
+  call)
+    "$ADB" emu gsm call 01012345678 >/dev/null && echo "incoming call" ;;
+  hangup)
+    "$ADB" emu gsm cancel 01012345678 >/dev/null && echo "call ended" ;;
   events)
     "$ADB" logcat -T 1 -s ChagokContract:V ChagokNavi:V ;;
   shot)
@@ -75,5 +81,5 @@ case "${1:-}" in
     f="qa-shots/${2:-$(date +%H%M%S)}.png"
     "$ADB" exec-out screencap -p > "$f" && echo "saved $f" ;;
   *)
-    sed -n 2,8p "$0" | sed 's/^# \{0,1\}//'; exit 1 ;;
+    sed -n 2,11p "$0" | sed 's/^# \{0,1\}//'; exit 1 ;;
 esac

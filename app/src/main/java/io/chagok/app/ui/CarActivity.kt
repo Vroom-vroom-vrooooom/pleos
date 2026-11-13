@@ -11,6 +11,8 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.content.res.Configuration
 import android.graphics.Typeface
+import android.media.AudioManager
+import android.media.AudioRecordingConfiguration
 import android.os.Build
 import android.os.Bundle
 import android.text.SpannableStringBuilder
@@ -62,6 +64,9 @@ class CarActivity : ScreenActivity() {
     private var current: SpeakCommand? = null // the line on screen
     private var speakingNow = false
     private var freshLine = false
+    private var saying = "" // what the TTS was last asked to read
+    private var held: Pair<String, Long>? = null // line cut off by a call / Gleo, and when, to re-read afterwards
+    private val audio by lazy { getSystemService(AudioManager::class.java) }
 
     /**
      * Pleos Connect reports mdpi (160 dpi) on its 2560×1440 screen, so dp/sp UI renders tiny.
@@ -87,6 +92,8 @@ class CarActivity : ScreenActivity() {
             })
             addEventListener(ttsEvents)
         }
+        audio.registerAudioRecordingCallback(micWatch, null)
+        if (Build.VERSION.SDK_INT >= 31) audio.addOnModeChangedListener(mainExecutor, modeWatch)
         navi = PleosNavi(this, ::onNavi)
         wire()
         if (state == null) intent.getStringExtra(TripContract.EXTRA_SPEAK)?.let(::onSpeak)
@@ -115,6 +122,8 @@ class CarActivity : ScreenActivity() {
 
     override fun onDestroy() {
         unregisterReceiver(receiver); navi?.release()
+        audio.unregisterAudioRecordingCallback(micWatch)
+        if (Build.VERSION.SDK_INT >= 31) audio.removeOnModeChangedListener(modeWatch)
         tts?.removeEventListener(ttsEvents); tts?.release(); super.onDestroy()
     }
 
@@ -128,7 +137,7 @@ class CarActivity : ScreenActivity() {
                 else "출발! 먼저 ${ro(first.name)} 가요. 가는 길에 재밌는 이야기가 보이면 들려줄게요."), counts = false)
         }
         click(R.id.start_orb) { speakingNow = true; render(); say("오늘은 ${ro(draft.destination)} 떠나는 날이에요. 준비되면 출발하자고 말해 주세요.") }
-        click(R.id.live_orb) { if (speakingNow) { tts?.stop(); speakingNow = false; render() } }
+        click(R.id.live_orb) { held = null; if (speakingNow) { tts?.stop(); speakingNow = false; render() } }
         click(R.id.live_place) { current?.place?.let(::openSheet) }
         click(R.id.sheet_decline) { decide(approve = false) }
         click(R.id.sheet_approve) { decide(approve = true) }
@@ -175,7 +184,7 @@ class CarActivity : ScreenActivity() {
 
     /** After arrival: clear the finished trip and go back to the start screen (also the back button on the summary). */
     private fun backToStart() {
-        current = null; savedPlaces.clear(); linesHeard = 0; sheetPlace = null; showTrips = false
+        current = null; held = null; savedPlaces.clear(); linesHeard = 0; sheetPlace = null; showTrips = false
         selectTrip(plan); history.clear(); screen = Screen.CAR_READY; render()
     }
 
@@ -191,7 +200,7 @@ class CarActivity : ScreenActivity() {
     private fun arrive(stats: Pair<Int, Int>?) {
         if (screen == Screen.CAR_SUMMARY) return
         arrived = stats; visited = route.size; sheetPlace = null
-        tts?.stop(); speakingNow = false
+        tts?.stop(); speakingNow = false; held = null
         emit(DriveEvent.Type.TRIP_FINISHED)
         navigate(Screen.CAR_SUMMARY)
     }
@@ -240,11 +249,33 @@ class CarActivity : ScreenActivity() {
     private fun finishSpeaking() = runOnUiThread { speakingNow = false; if (!isFinishing) render() }
     private fun flushQueuedLine() { queuedLine?.let { queuedLine = null; say(it) } }
     private fun say(text: String) {
+        if (inConversation()) { hold(text); return }
         when (ttsReady) {
             null -> queuedLine = text
-            true -> tts?.speak(text, true)
+            true -> { saying = text; tts?.speak(text, true) }
             false -> { speakingNow = false; render() } // no Korean voice: text only
         }
+    }
+
+    // ── 대화 중엔 일시정지: a call (audio mode) or an open mic (Gleo, call) stops Chagok; it re-reads the line after ──
+    private val micWatch = object : AudioManager.AudioRecordingCallback() {
+        override fun onRecordingConfigChanged(configs: List<AudioRecordingConfiguration>) = onConversationChanged()
+    }
+    private val modeWatch = AudioManager.OnModeChangedListener { onConversationChanged() }
+    private fun inConversation() = audio.mode != AudioManager.MODE_NORMAL ||
+        audio.activeRecordingConfigurations.any { it.clientAudioSource != HOTWORD } // always-on wake word isn't a conversation
+    private fun hold(text: String) {
+        held = text to System.currentTimeMillis(); speakingNow = false; render()
+        Log.i("ChagokContract", "대화 중: 멈춤")
+    }
+    private fun onConversationChanged() = runOnUiThread {
+        if (isFinishing) return@runOnUiThread
+        if (inConversation()) { if (speakingNow) { hold(saying); tts?.stop() } ; return@runOnUiThread }
+        val (text, at) = held ?: return@runOnUiThread
+        held = null
+        if (System.currentTimeMillis() - at > RESUME_WITHIN_MS) { Log.i("ChagokContract", "대화 끝: 오래돼서 넘김"); return@runOnUiThread }
+        Log.i("ChagokContract", "대화 끝: 다시 읽기")
+        speakingNow = true; render(); say(text)
     }
 
     /** Pleos → Phone. ponytail: logcat stands in for the transport until the backend relay exists. */
@@ -316,7 +347,7 @@ class CarActivity : ScreenActivity() {
         }
         val line = findViewById<TextView>(R.id.live_line)
         line.text = current?.text.orEmpty()
-        val target = if (current != null && !speakingNow) .5f else 1f // dimmed once said
+        val target = if (current != null && !speakingNow && held == null) .5f else 1f // dimmed once said, not while held
         if (freshLine) {
             freshLine = false
             line.alpha = 0f; line.translationY = dp(9).toFloat()
@@ -429,6 +460,8 @@ class CarActivity : ScreenActivity() {
     }
 
     private companion object {
+        const val HOTWORD = 1999 // MediaRecorder.AudioSource.HOTWORD (system API)
+        const val RESUME_WITHIN_MS = 60_000L // a line cut off longer ago than this is skipped, not re-read
         const val ACTION_SPEAK = "io.chagok.app.pleos.SPEAK"
         const val ACTION_TRIP = "io.chagok.app.pleos.TRIP"
         const val ACTION_ARRIVE = "io.chagok.app.pleos.ARRIVE"
