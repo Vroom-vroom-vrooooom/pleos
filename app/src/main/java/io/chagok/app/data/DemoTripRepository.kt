@@ -11,7 +11,7 @@ class DemoTripRepository : TripTransferPort, NavigationPort, MediaImportPort {
         Place("gyeongpo", "경포 호수 산책길", "15:00", "50분", "구독 채널 영상 1개", "구독", "이동 40분 · 오전 추천", "8.4 km · 18분", 37.7965, 128.9000, "항상 열려 있어요"),
         Place("jeongdongjin", "정동진 일출", "06:00", "40분", "좋아요한 쇼츠 1개", "좋아요", "일정과 거리가 멀어요", "28 km · 40분", 37.6908, 129.0345, "항상 열려 있어요"),
     )
-    val radioPlace = Place("gyeongpodae", "경포대", "", "", "라디오에서 나온 장소", "이야기", "12분 추가 · 예시", "12분 추가", 37.7953, 128.8964, "항상 열려 있어요")
+    val radioPlace = Place("gyeongpodae", "경포대", "", "", "라디오에서 나온 장소", "공유", "12분 추가 · 예시", "12분 추가", 37.7953, 128.8964, "항상 열려 있어요")
     override fun stageTrip(draft: TripDraft, places: List<Place>): IntegrationResult {
         val plan = TripPlan("demo-${System.currentTimeMillis()}", draft, places).toJson()
         android.util.Log.i("ChagokContract", plan) // ponytail: logcat stands in for the transport until the backend relay exists
