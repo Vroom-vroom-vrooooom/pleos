@@ -21,8 +21,7 @@ if [ -z "$ADB" ]; then
 fi
 [ -n "$ADB" ] || { echo "adb not found. Set ADB=/path/to/adb" >&2; exit 1; }
 # With a phone also connected (relay.sh), talk to the Pleos emulator unless ANDROID_SERIAL says otherwise.
-export ANDROID_SERIAL="${ANDROID_SERIAL:-$("$ADB" devices | tr -d '
-' | awk '$2=="device" && $1 ~ /^emulator-/ {print $1; exit}')}"
+export ANDROID_SERIAL="${ANDROID_SERIAL:-$("$ADB" devices | tr -d '' | awk '$2=="device" && $1 ~ /^emulator-/ {print $1; exit}')}"
 APP=io.chagok.app.pleos/io.chagok.app.ui.CarActivity
 TRIP_ID=qa-trip
 
