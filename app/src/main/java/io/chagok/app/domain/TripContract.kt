@@ -83,7 +83,7 @@ data class DriveEvent(val tripId: String, val type: Type, val placeId: String?, 
     }
 }
 
-private fun Place.toJson() = JSONObject().put("id", id).put("name", name).put("time", time).put("duration", duration)
+internal fun Place.toJson() = JSONObject().put("id", id).put("name", name).put("time", time).put("duration", duration)
     .put("source", source).put("group", group).put("reason", reason).put("distance", distance)
     .apply { lat?.let { put("lat", it) }; lng?.let { put("lng", it) }; if (open.isNotEmpty()) put("open", open) }
 

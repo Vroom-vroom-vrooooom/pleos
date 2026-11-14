@@ -30,9 +30,14 @@ import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
 import android.widget.*
+import io.chagok.app.BuildConfig
 import io.chagok.app.R
+import io.chagok.app.data.ApiError
+import io.chagok.app.data.ChagokApi
 import io.chagok.app.domain.*
+import java.io.IOException
 import java.time.Instant
+import java.util.concurrent.Executors
 import java.time.LocalDate
 import java.util.Locale
 import kotlin.math.abs
@@ -76,6 +81,20 @@ class CarActivity : ScreenActivity() {
     private var freshLine = false
     private var saying = "" // what the TTS was last asked to read
     private var held: Pair<String, Long>? = null // line cut off by a call / Gleo, and when, to re-read afterwards
+    /**
+     * Backend link after pairing: deviceId, device token (30 days) and the message cursor, in this app's private preferences.
+     * ponytail: move the token to Android Keystore before release (Pleos privacy guide). No account login on the car.
+     */
+    private val session by lazy { getSharedPreferences("chagok-car", MODE_PRIVATE) }
+    private val api by lazy { ChagokApi(BuildConfig.API_BASE_URL) { session.getString("token", null) } }
+    private val paired get() = session.getString("deviceId", null) != null
+    private val net = Executors.newSingleThreadExecutor() // one at a time, so events reach the server in order
+    /** DriveEvents (+ a place found in the car to register first) not yet accepted by the server. Main thread only.
+     *  ponytail: in memory, lost if the app is killed offline; persist it if that happens on the road. */
+    private val outbox = mutableListOf<Pair<DriveEvent, Place?>>()
+    private var fetching = false
+    private val poll = object : Runnable { override fun run() { fetch(); main.postDelayed(this, POLL_MS) } }
+    private var pairing: String? = null // digits typed on the pairing pad; null = pad closed
     private val audio by lazy { getSystemService(AudioManager::class.java) }
     private val main = Handler(Looper.getMainLooper())
     private val root by lazy { findViewById<FrameLayout>(R.id.car_root) }
@@ -124,14 +143,14 @@ class CarActivity : ScreenActivity() {
         if (state == null) intent.getStringExtra(TripContract.EXTRA_SPEAK)?.let(::onSpeak)
         // Backend messages arrive as broadcasts so they don't bring Chagok to the front: Pleos moves a front-launched
         // app into the primary (left) window and would swap it with the navi.
-        // ponytail: exported for adb/QA; replace with the backend transport and drop the export.
+        // ponytail: exported for adb/QA (qa.sh); the backend queue (fetch) is the real transport. Drop the export before release.
         val filter = IntentFilter(ACTION_SPEAK).apply { addAction(ACTION_TRIP); addAction(ACTION_ARRIVE) }
-        if (Build.VERSION.SDK_INT >= 33) registerReceiver(receiver, filter, RECEIVER_EXPORTED) else registerReceiver(receiver, filter)
+        registerReceiver(receiver, filter, RECEIVER_EXPORTED) // minSdk 28 has the flags overload; Pleos is API 34
     }
 
     private val receiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
-            intent.getStringExtra(TripContract.EXTRA_TRIP)?.let { applyPlan(it); selectTrip(plan); if (screen != Screen.CAR_READY) navigate(Screen.CAR_READY) else render() }
+            intent.getStringExtra(TripContract.EXTRA_TRIP)?.let(::receivePlan)
             intent.getStringExtra(TripContract.EXTRA_SPEAK)?.let(::onSpeak)
             if (intent.action == ACTION_ARRIVE) arrive(null) // QA: pretend the navi reported the destination
         }
@@ -141,11 +160,16 @@ class CarActivity : ScreenActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        intent.getStringExtra(TripContract.EXTRA_TRIP)?.let { applyPlan(it); selectTrip(plan); render() }
+        intent.getStringExtra(TripContract.EXTRA_TRIP)?.let(::receivePlan)
         intent.getStringExtra(TripContract.EXTRA_SPEAK)?.let(::onSpeak)
     }
 
+    // Poll the backend only while the panel is on screen (the navi beside it keeps it started).
+    override fun onStart() { super.onStart(); main.removeCallbacks(poll); main.post(poll) }
+    override fun onStop() { main.removeCallbacks(poll); super.onStop() }
+
     override fun onDestroy() {
+        net.shutdown()
         main.removeCallbacksAndMessages(null)
         unregisterReceiver(receiver); navi?.release()
         audio.unregisterAudioRecordingCallback(micWatch)
@@ -162,11 +186,92 @@ class CarActivity : ScreenActivity() {
         visited = 0; nextEta = null; arrived = null
     }
 
-    /** Phone → Pleos entry point. Until the transport exists, the plan arrives as an intent extra (see CONTRACT.md). */
+    /** Launch with a TripPlan extra (adb): it becomes the trip before the first render. */
     private fun applyPlan(json: String) {
         runCatching { TripPlan.fromJson(json) }
             .onSuccess { incoming -> trips.removeAll { it.tripId == incoming.tripId }; trips.add(0, incoming); plan = incoming }
             .onFailure { Log.w("ChagokContract", "Ignoring invalid TripPlan, showing sample trip: ${it.message}") }
+    }
+
+    /** A TripPlan from the phone (backend queue or adb): shown at once before departure; while driving it waits in 코스 바꾸기. */
+    private fun receivePlan(json: String) {
+        val incoming = runCatching { TripPlan.fromJson(json) }
+            .onFailure { Log.w("ChagokContract", "Ignoring invalid TripPlan: ${it.message}") }.getOrNull() ?: return
+        trips.removeAll { it.tripId == incoming.tripId }; trips.add(0, incoming)
+        if (screen == Screen.CAR_RADIO) { toast("폰에서 ${incoming.draft.destination} 여행이 왔어요. 코스 바꾸기에 넣어 둘게요"); return }
+        selectTrip(incoming); showTrips = false; tab = TAB_PLAN
+        if (screen != Screen.CAR_READY) navigate(Screen.CAR_READY) else render()
+    }
+
+    // ── backend (after pairing) ──
+    /** Picks up queued TripPlans / SpeakCommands, and resends events that failed for a passing reason. */
+    private fun fetch() {
+        val device = session.getString("deviceId", null) ?: return
+        flush()
+        if (fetching) return
+        fetching = true
+        val cursor = session.getString("cursor", "").orEmpty()
+        net.execute {
+            val result = runCatching { api.messages(device, cursor) }
+            runOnUiThread {
+                fetching = false
+                if (isDestroyed) return@runOnUiThread
+                result.onSuccess { (messages, next) ->
+                    messages.forEach { m ->
+                        when (m.kind) {
+                            "TripPlan" -> receivePlan(m.payload)
+                            // No expiry on the server: a line queued while the car was off is not news any more.
+                            "SpeakCommand" -> if (System.currentTimeMillis() - m.createdMs < STALE_MS) onSpeak(m.payload)
+                                else Log.i("ChagokContract", "Skipping an old SpeakCommand")
+                        }
+                    }
+                    session.edit().putString("cursor", next).apply()
+                }.onFailure { e ->
+                    if (e is ApiError && (e.status == 401 || e.status == 404)) unpair("폰과 연결이 끊겼어요. 다시 연결해 주세요")
+                    else Log.w("ChagokApi", "Message poll failed", e)
+                }
+            }
+        }
+    }
+
+    /** Sends queued DriveEvents in order; stops at the first one that failed for a passing reason (retried on the next poll). */
+    private fun flush() {
+        if (outbox.isEmpty()) return
+        val batch = outbox.toList(); outbox.clear()
+        net.execute {
+            val left = batch.dropWhile { (event, found) ->
+                runCatching { found?.let { api.addPlace(event.tripId, it) }; api.postEvent(event) }.fold({ true }) { e ->
+                    Log.w("ChagokApi", "DriveEvent not sent: ${event.toJson()}", e)
+                    !(e is IOException || e is ApiError && (e.status == 429 || e.status >= 500)) // rejected for good: drop it
+                }
+            }
+            if (left.isNotEmpty()) runOnUiThread { outbox.addAll(0, left) }
+        }
+    }
+
+    private fun claim(code: String) {
+        net.execute {
+            val result = runCatching { api.claim(code, "Pleos 차량") }
+            runOnUiThread {
+                if (isDestroyed) return@runOnUiThread
+                result.onSuccess { (device, token) ->
+                    session.edit().putString("deviceId", device).putString("token", token).putString("cursor", "").apply()
+                    pairing = null; toast("폰과 연결했어요. 폰에서 보낸 여행이 여기로 와요"); fetch()
+                }.onFailure { e ->
+                    pairing = ""
+                    toast(when {
+                        e is ApiError && e.status in setOf(400, 422) -> "번호가 맞지 않거나 5분이 지났어요"
+                        e is ApiError && e.status == 429 -> "잠시 후 다시 입력해 주세요"
+                        e is ApiError -> "서버 오류가 났어요 (${e.status})"
+                        else -> "인터넷에 연결하지 못했어요"
+                    })
+                }
+            }
+        }
+    }
+
+    private fun unpair(message: String) {
+        session.edit().clear().apply(); outbox.clear(); toast(message)
     }
 
     override fun itineraryPlaces() = route
@@ -208,6 +313,7 @@ class CarActivity : ScreenActivity() {
     override fun onBackPressed() {
         when {
             sheetPlace != null -> { sheetPlace = null; render() }
+            pairing != null -> { pairing = null; render() }
             screen == Screen.CAR_SUMMARY -> backToStart()
             showTrips -> { showTrips = false; render() }
             screen == Screen.CAR_READY && tab != TAB_PLAN -> { tab = TAB_PLAN; render() }
@@ -227,6 +333,8 @@ class CarActivity : ScreenActivity() {
     private fun onSpeak(json: String) {
         val command = runCatching { SpeakCommand.fromJson(json) }
             .onFailure { Log.w("ChagokContract", "Ignoring invalid SpeakCommand: ${it.message}") }.getOrNull() ?: return
+        // A line for another trip (queued earlier, or the driver switched trips) must not be read out.
+        if (command.tripId != tripId) { Log.w("ChagokContract", "Ignoring SpeakCommand for another trip (${command.tripId})"); return }
         showLine(command, counts = true)
     }
 
@@ -239,16 +347,16 @@ class CarActivity : ScreenActivity() {
 
     // ── "들렀다 갈까요?" ──
     private fun openSheet(place: Place) {
-        if (savedPlaces.add(place.id)) emit(DriveEvent.Type.PLACE_SAVED, place.id)
+        if (savedPlaces.add(place.id)) emit(DriveEvent.Type.PLACE_SAVED, place)
         sheetPlace = place; render()
     }
 
     private fun decide(approve: Boolean) {
         val place = sheetPlace ?: return
         sheetPlace = null
-        if (!approve) { emit(DriveEvent.Type.WAYPOINT_DECLINED, place.id); toast("${place.name}, 기록에만 담아 둘게요"); return }
+        if (!approve) { emit(DriveEvent.Type.WAYPOINT_DECLINED, place); toast("${place.name}, 기록에만 담아 둘게요"); return }
         val added = navi?.takeIf { it.ready }?.addWaypoint(place) == true
-        emit(DriveEvent.Type.WAYPOINT_APPROVED, place.id)
+        emit(DriveEvent.Type.WAYPOINT_APPROVED, place)
         if (route.none { it.id == place.id }) route.add(visited.coerceAtMost(route.size), place)
         nextEta = null // the navi re-routes; wait for its next progress event
         toast(if (added) "${place.name}, 내비 경유지에 넣었어요" else if ((navi?.waypoints ?: 0) >= 2) "내비 경유지는 2곳까지라 기록에만 넣었어요" else "${place.name}, 다음 들를 곳으로 넣었어요")
@@ -257,11 +365,11 @@ class CarActivity : ScreenActivity() {
     /** 발견 → 추가 before departure: the place joins today's route and goes to the navi with it on 출발하기. */
     private fun addFromFind(place: Place) {
         if (route.any { it.id == place.id }) return
-        if (savedPlaces.add(place.id)) emit(DriveEvent.Type.PLACE_SAVED, place.id)
+        if (savedPlaces.add(place.id)) emit(DriveEvent.Type.PLACE_SAVED, place)
         // Pleos takes the destination plus at most two waypoints.
         if (route.size >= 3) { toast("경유지는 2곳까지라 기록에만 넣었어요"); return }
         route.add(0, place)
-        emit(DriveEvent.Type.WAYPOINT_APPROVED, place.id)
+        emit(DriveEvent.Type.WAYPOINT_APPROVED, place)
         toast("${place.name}, 출발하면 내비에 같이 넣을게요")
     }
 
@@ -307,9 +415,17 @@ class CarActivity : ScreenActivity() {
         speakingNow = true; render(); say(text)
     }
 
-    /** Pleos → Phone. ponytail: logcat stands in for the transport until the backend relay exists. */
-    private fun emit(type: DriveEvent.Type, placeId: String? = null) {
-        Log.i("ChagokContract", DriveEvent(tripId, type, placeId, Instant.now().toString()).toJson())
+    /**
+     * Pleos → Phone: logged (qa.sh events) and, once paired, sent to the backend for the phone's 기록.
+     * Sample trips exist only in the car, so their events stay in the log. A place outside the plan (발견, a radio
+     * place) is registered with the trip first, or the backend rejects the event.
+     */
+    private fun emit(type: DriveEvent.Type, place: Place? = null) {
+        val event = DriveEvent(tripId, type, place?.id, Instant.now().toString())
+        Log.i("ChagokContract", event.toJson())
+        if (!paired || tripId.startsWith("sample-")) return
+        outbox.add(event to place?.takeIf { p -> plan.places.none { it.id == p.id } })
+        flush()
     }
 
     private fun toast(text: String) {
@@ -324,6 +440,7 @@ class CarActivity : ScreenActivity() {
         val live = screen == Screen.CAR_RADIO
         root.addView(if (live) liveView() else tabsView(), FrameLayout.LayoutParams(MATCH, MATCH))
         sheetPlace?.takeIf { live }?.let { root.addView(sheetView(it), FrameLayout.LayoutParams(MATCH, MATCH)) }
+        pairing?.takeIf { !live }?.let { root.addView(pairView(it), FrameLayout.LayoutParams(MATCH, MATCH)) }
         toastText?.let { root.addView(toastView(it), FrameLayout.LayoutParams(WRAP, WRAP, Gravity.CENTER_HORIZONTAL or if (live) Gravity.TOP else Gravity.BOTTOM).apply {
             if (live) topMargin = dp(104) else bottomMargin = dp(100)
         }) }
@@ -442,7 +559,9 @@ class CarActivity : ScreenActivity() {
             else grid(kept.take(2).map { photo(photoOf(it.name), 16, top = listOf(tag("담은 곳", glass = true)), bottom = label(it.name, 17, Color.WHITE, 700, single = true), small = true) }, 2)
         val cta = row().apply {
             if (arrivedNow) addView(button("처음으로", s2, tx) { backToStart() }, lp(WRAP, dp(52)).apply { marginEnd = dp(12) })
-            addView(button("폰에서 기록 이어가기", inv, onInv) { toast("폰의 차곡 기록에서 사진과 메모를 이어서 남길 수 있어요") }, lp(0, dp(52), 1f))
+            else if (paired) addView(button("연결 끊기", s2, tx) { unpair("폰과 연결을 끊었어요") ; render() }, lp(WRAP, dp(52)).apply { marginEnd = dp(12) })
+            addView(if (paired) button("폰에서 기록 이어가기", inv, onInv) { toast("폰의 차곡 기록에서 사진과 메모를 이어서 남길 수 있어요") }
+                else button("폰과 연결하기", inv, onInv) { pairing = ""; render() }, lp(0, dp(52), 1f))
         }
         return if (wide) split(hero, listOf(strip to 0f, statGrid to 0f, saved to 1f), cta, heroTall = 0)
         else column().apply {
@@ -541,6 +660,27 @@ class CarActivity : ScreenActivity() {
         }, lp(MATCH, WRAP))
         else { sheet.addView(pic, lp(MATCH, dp(150)).apply { bottomMargin = dp(16) }); sheet.addView(side, lp(MATCH, WRAP)) }
         wrap.addView(sheet, FrameLayout.LayoutParams(MATCH, WRAP, Gravity.BOTTOM))
+        return wrap
+    }
+
+    /** 폰과 연결하기 (parked only): the 8-digit code from the phone (MY → 차량 연결) on a big number pad. */
+    private fun pairView(digits: String): View {
+        val wrap = FrameLayout(this).apply { setBackgroundColor(shade(.6f)); isClickable = true; setOnClickListener { pairing = null; render() } }
+        val sheet = column(bg = GradientDrawable().apply { setColor(s1); cornerRadii = FloatArray(8) { if (it < 4) dp(24).toFloat() else 0f } }).apply {
+            isClickable = true; setPadding(dp(24), dp(12), dp(24), dp(24))
+        }
+        sheet.addView(View(this).apply { background = rounded(s3, 999) }, lp(dp(40), dp(4)).apply { gravity = Gravity.CENTER_HORIZONTAL; bottomMargin = dp(16) })
+        sheet.addView(label("폰과 연결하기", 22, tx, 750))
+        sheet.addView(label("폰의 차곡 앱 MY → 차량 연결에 나온 8자리 번호를 넣어 주세요", 15, mu, 600), lp(MATCH, WRAP).apply { topMargin = dp(4); bottomMargin = dp(16) })
+        val shown = digits.padEnd(8, '·').let { "${it.take(4)}  ${it.drop(4)}" }
+        sheet.addView(label(shown, 34, tx, 700, num = true).apply { gravity = Gravity.CENTER; letterSpacing = .15f; background = rounded(s2, 16) }, lp(MATCH, dp(64)).apply { bottomMargin = dp(16) })
+        fun key(text: String, fill: Int = s2, fg: Int = tx, onClick: () -> Unit) = button(text, fill, fg, compact = true, onClick = onClick).apply { minHeight = dp(56) }
+        val keys = (1..9).map { n -> key("$n") { if (digits.length < 8) { pairing = digits + n; render() } } } + listOf(
+            key("지우기") { pairing = digits.dropLast(1); render() },
+            key("0") { if (digits.length < 8) { pairing = digits + "0"; render() } },
+            key("연결", if (digits.length == 8) inv else s3, if (digits.length == 8) onInv else mu) { if (digits.length == 8) { toast("연결하는 중…"); claim(digits) } })
+        sheet.addView(grid(keys, 3, gap = 8, fill = false), lp(MATCH, WRAP))
+        wrap.addView(sheet, FrameLayout.LayoutParams(if (wide) dp(560) else MATCH, WRAP, Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL))
         return wrap
     }
 
@@ -714,6 +854,8 @@ class CarActivity : ScreenActivity() {
     private companion object {
         const val HOTWORD = 1999 // MediaRecorder.AudioSource.HOTWORD (system API)
         const val RESUME_WITHIN_MS = 60_000L // a line cut off longer ago than this is skipped, not re-read
+        const val POLL_MS = 5_000L // backend message queue (backend docs: every 5–10 s)
+        const val STALE_MS = 120_000L // a queued line older than this is skipped
         const val ACTION_SPEAK = "io.chagok.app.pleos.SPEAK"
         const val ACTION_TRIP = "io.chagok.app.pleos.TRIP"
         const val ACTION_ARRIVE = "io.chagok.app.pleos.ARRIVE"
@@ -736,7 +878,7 @@ class CarActivity : ScreenActivity() {
         /** ponytail: sample nearby places for 발견 until the backend recommends them along the route. */
         fun findsFor(dest: String): List<Place> {
             fun f(id: String, name: String, reason: String, extra: String, lat: Double, lng: Double, open: String) =
-                Place(id, name, "", "", "가는 길 추천", "발견", reason, extra, lat, lng, open)
+                Place(id, name, "", "", "가는 길 추천", "", reason, extra, lat, lng, open) // group: backend takes only 좋아요/재생목록/구독/공유/""
             return when (dest) {
                 "속초" -> listOf(
                     f("find-gaetbae", "갯배 선착장", "가는 길 바로 옆", "2분 추가", 38.2047, 128.5947, "22시까지"),

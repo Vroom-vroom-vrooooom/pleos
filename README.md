@@ -17,6 +17,15 @@ Pleos Connect에서 돌아가는 차곡 차량 앱입니다. 내비·상태바·
 - QA 체크리스트: [QA.md](QA.md)
 - 디자인 캔버스 "차곡 디자인" (Claude 디자인 아티팩트)이 기준입니다. `mockup/pleos-screen.html`은 이전 디자인의 반 칸 목업입니다.
 
+## 백엔드 연결
+
+서버 `https://chagok-api-om4h3skohq-du.a.run.app` (backend 레포, `app/build.gradle`의 `API_BASE_URL`). 코드는 `data/ChagokApi.kt`(폰과 같은 파일)입니다.
+
+- 연결: 폰 MY → 차량 연결에서 받은 8자리 번호를 차의 기록 → **폰과 연결하기**에 넣습니다(`POST /v1/pairings/claim`). 차에는 계정 로그인이 없고, 기기 토큰(30일)만 이 앱 private 설정에 둡니다(출시 전 Keystore로).
+- 받기: 화면이 떠 있는 동안 5초마다 `GET /v1/devices/{id}/messages`. TripPlan은 출발 전이면 바로 오늘 일정으로, 주행 중이면 코스 바꾸기에 넣어 둡니다. SpeakCommand는 지금 여행의 것이고 2분 안에 온 것만 읽습니다.
+- 보내기: DriveEvent를 `POST /v1/trips/{id}/events`로. 계획에 없던 장소(발견, 라디오 장소)는 먼저 `POST /v1/trips/{id}/places`. 잠깐 실패하면 다음 폴링 때 다시 보냅니다. 샘플 여행 이벤트는 logcat에만 남습니다.
+- 로컬 백엔드로 QA: backend 레포를 메모리 저장소로 `127.0.0.1:8000`에 띄우고 `adb reverse tcp:8000 tcp:8000`, `./gradlew assembleDebug -PchagokApi=http://127.0.0.1:8000`(http는 debug 빌드만 허용).
+
 ## 실행
 
 1. Pleos Connect 2.1.0 에뮬레이터(API 34, x86_64)를 준비합니다: https://document.pleos.ai/docs/connect/guide/getting-started/application-development/setup-connect-sdk-emulator
