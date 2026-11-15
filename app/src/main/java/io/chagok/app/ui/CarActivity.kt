@@ -765,7 +765,7 @@ class CarActivity : ScreenActivity() {
     }
 
     // ── design v4 building blocks ──
-    private fun weight(w: Int): Typeface = Typeface.create(Typeface.DEFAULT, w, false)
+    private fun weight(w: Int): Typeface = Typeface.create(resources.getFont(R.font.suit), w, false) // SUIT (차곡 디자인 v4)
     private fun label(value: CharSequence, sp: Int, color: Int, w: Int = 400, single: Boolean = false, num: Boolean = false, spacing: Float = 1.4f) = TextView(this).apply {
         text = value; textSize = sp.toFloat(); setTextColor(color); typeface = weight(w); setLineSpacing(0f, spacing)
         if (single) { maxLines = 1; ellipsize = TextUtils.TruncateAt.END }

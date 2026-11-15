@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <style name="Theme.Chagok" parent="android:style/Theme.Material.Light.NoActionBar">
-        <item name="android:fontFamily">sans</item>
+        <item name="android:fontFamily">@font/suit</item>
         <item name="android:colorAccent">@color/ink</item>
         <item name="android:windowBackground">@color/c_s0</item>
         <item name="android:statusBarColor">@color/paper</item>

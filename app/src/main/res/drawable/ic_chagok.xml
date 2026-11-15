@@ -1,11 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- App icon, 차곡 R4 다크 (차량 화면 기본): full square background, symbol 64% of the visible width, centred; the launcher masks the corners.
-     Adaptive icon: 108dp layer, 72dp visible → symbol 46dp wide, 33dp tall. Pleos Connect icon spec still to check (contest guide). -->
+<!-- App icon, 차곡 R4 흑백 최종 다크 (차량 화면 기본): full square background, symbol 64% of the visible width, centred; the launcher masks the corners.
+     Adaptive icon: 108dp layer, 72dp visible → symbol 46dp wide, 32.3dp tall. Pleos Connect icon spec still to check (contest guide). -->
 <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
     <background>
         <color android:color="#121417" />
     </background>
     <foreground>
-        <inset android:drawable="@drawable/logo_symbol_dark" android:insetLeft="31dp" android:insetRight="31dp" android:insetTop="37.5dp" android:insetBottom="37.5dp" />
+        <inset android:drawable="@drawable/logo_symbol_dark" android:insetLeft="31dp" android:insetRight="31dp" android:insetTop="37.85dp" android:insetBottom="37.85dp" />
     </foreground>
 </adaptive-icon>
