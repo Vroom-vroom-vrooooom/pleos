@@ -18,6 +18,33 @@ Pleos Connect에서 돌아가는 차곡 차량 앱입니다. 내비·상태바·
 - 차 → 폰 기록 전달 (무엇이 가고 무엇이 아직 안 가는지): [CAR-TO-PHONE.md](CAR-TO-PHONE.md)
 - 디자인 캔버스 "차곡 디자인" (Claude 디자인 아티팩트)이 기준입니다. `mockup/pleos-screen.html`은 이전 디자인의 반 칸 목업입니다.
 
+## 제출 정보
+
+- **앱 이름:** 차곡 (Pleos 차량 앱) · 팀 부릉부릉부르릉
+- **한 줄 소개:** 폰에서 짠 여행 일정을 받아 Pleos 내비로 길을 잡고, 달리는 동안 지나는 장소 이야기를 들려주며 들렀다 갈 곳을 제안하고, 도착하면 그날의 기록을 정리해 주는 여행 동반자 앱입니다.
+- **APK 위치:** [`apk/부릉부릉부르릉_차곡_pleos_release.apk`](apk/) (패키지 `io.chagok.app.pleos`, 0.1.0, 디버그 키 서명)
+- **함께 쓰는 앱:** 폰 앱 https://github.com/Vroom-vroom-vrooooom/phone · 백엔드 https://github.com/Vroom-vroom-vrooooom/backend
+
+### 실행 방법
+
+1. Pleos Connect 2.1.0 에뮬레이터를 켭니다(아래 테스트 환경).
+2. `adb install -r "apk/부릉부릉부르릉_차곡_pleos_release.apk"`
+3. 앱 목록에서 **차곡**을 엽니다. 폰과 연결하지 않아도 샘플 여행으로 출발 전 → 출발하기(내비 경로) → 주행 중 → 도착 요약을 볼 수 있습니다.
+4. 내비 옆 반 칸으로 보려면 칸 오른쪽 끝 ⋮ 손잡이를 끌거나 `./qa.sh split`을 씁니다. 주행 중 말·도착은 `./qa.sh speak …`, `./qa.sh arrive`로 흉내 낼 수 있습니다(아래 [실행](#실행)).
+5. 폰과 연결해 보려면: 폰 앱 MY → 차량 연결의 8자리 번호를 위쪽 **프로필** → **폰과 연결하기**에 넣습니다.
+
+소스에서 빌드: `./gradlew assembleRelease` → `app/build/outputs/apk/release/app-release.apk`
+
+### 테스트 환경·설정
+
+| 항목 | 값 |
+|---|---|
+| 개발·빌드 | Windows 11, JDK 17, Android SDK 34 (compileSdk/targetSdk 34, minSdk 28), Git Bash(`qa.sh`) |
+| Pleos Connect 에뮬레이터 | **2.1.0**, 시스템 이미지 `pleos_car_emulator` (API 34, x86_64), 기기 프로필 `Pleos_Connect_v2_0` |
+| 화면 규격 | **2560 × 1440 (가로), 160dpi** · 차곡은 내비 옆 반 칸(약 420dp)과 전체 칸 둘 다 지원 |
+| Pleos SDK | TextToSpeech 3.3.1, NaviHelper 3.0.5 |
+| 백엔드 | `https://chagok-api-om4h3skohq-du.a.run.app` (APK에 들어 있음, 따로 설정할 것 없음) |
+
 ## 백엔드 연결
 
 서버 `https://chagok-api-om4h3skohq-du.a.run.app` (backend 레포, `app/build.gradle`의 `API_BASE_URL`). 코드는 `data/ChagokApi.kt`(폰과 같은 파일)입니다.
@@ -66,4 +93,4 @@ res/drawable-nodpi/photo_*.jpg  샘플 장소 사진
 qa.sh, relay.sh, QA.md       QA·중계 도구
 ```
 
-Pleos SDK: TextToSpeech 3.3.1(on-device), NaviHelper 3.0.5. 주행 중 허용 앱 선언, 음성 명령(Gleo Interface), 실제 백엔드 전송은 아직 하지 않았습니다.
+Pleos SDK: TextToSpeech 3.3.1(on-device), NaviHelper 3.0.5. 주행 중 허용 앱 선언, 음성 명령(Gleo Interface)은 아직 하지 않았습니다.

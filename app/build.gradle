@@ -16,6 +16,10 @@ android {
         // Chagok backend (backend repo, Cloud Run). Local backend: ./gradlew assembleDebug -PchagokApi=http://127.0.0.1:8000 + adb reverse.
         buildConfigField 'String', 'API_BASE_URL', "\"${project.findProperty('chagokApi') ?: 'https://chagok-api-om4h3skohq-du.a.run.app'}\""
     }
+    buildTypes {
+        // Contest submission APK: signed with the debug key so it installs on the emulator as-is.
+        release { signingConfig signingConfigs.debug }
+    }
     buildFeatures { buildConfig true }
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_17
