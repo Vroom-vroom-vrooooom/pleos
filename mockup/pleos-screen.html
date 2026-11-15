@@ -9,7 +9,8 @@
   Pleos가 그리는 곳: 상태바(오른쪽 위), DrivingView(왼쪽), 독(아래). 앱 칸(1682×1210)에는 앱이 최대 2개.
   기본 = 반 칸: 내비(운전자 쪽) + 차곡 841×1210. 전체 칸 = 앱 하나가 칸 전체.
   차곡 = 디자인 캔버스 "차곡 디자인" v4를 앱(CarActivity)과 같은 배치로: 반 칸은 위아래로 쌓고 전체 칸은 좌우.
-  출발 전 탭(오늘 일정 · 발견 · 기록, 코스 바꾸기) / 주행 중(장소 사진 배경) / 들렀다 갈까요? / 통화 중 멈춤 / 도착 요약. 다크·라이트는 위 막대.
+  출발 전 탭(오늘 일정 · 발견 · 기록, 코스 바꾸기) / 주행 중(장소 사진 배경) / 들렀다 갈까요? / 통화 중 멈춤 / 도착 요약 / 영상일기.
+  숫자(시간·거리·개수)는 .n으로 크고 굵게. 주행 중 배경은 장소 사진 3장을 천천히 넘김(움직임 줄이기 설정이면 고정). 다크·라이트는 위 막대.
   사진은 앱과 같은 샘플(photos/, 앱의 res/drawable-nodpi/photo_*.jpg). 왼쪽 차량 그림은 단순 실루엣.
 -->
 <style>
@@ -75,6 +76,9 @@
   .ell { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .muted { color:var(--mu); }
   .num { font-variant-numeric:tabular-nums; }
+  /* 숫자 강조: 시간·거리·개수는 본문보다 크고 굵게, 가장 진한 색(다크=흰색, 라이트=검정, 사진 위=흰색) */
+  .n { color:var(--tx); font-weight:800; font-size:1.2em; line-height:1; font-variant-numeric:tabular-nums; letter-spacing:-.01em; }
+  .photo .n, .tag.glass .n { color:#fff; }
   .img { display:block; width:100%; height:100%; object-fit:cover; }
   .ic { width:44px; height:44px; fill:none; stroke:currentColor; stroke-width:2; stroke-linecap:round; stroke-linejoin:round; flex:none; }
   .ic.sm { width:36px; height:36px; } .ic.fill { fill:currentColor; stroke:none; }
@@ -109,8 +113,8 @@
   .photo .bot { z-index:1; position:absolute; left:40px; right:40px; bottom:40px; }
   .photo.sm .top { left:24px; top:24px; } .photo.sm .bot { left:24px; right:24px; bottom:24px; }
   .stat { background:var(--s1); border-radius:48px; padding:32px 36px; display:flex; flex-direction:column; justify-content:flex-end; min-width:0; }
-  .stat b { display:block; font-size:56px; line-height:1.15; font-weight:600; font-variant-numeric:tabular-nums; }
-  #slot.split .rec .stat { padding:24px; } #slot.split .rec .stat b { font-size:44px; }
+  .stat b { display:block; font-size:64px; line-height:1.15; font-weight:800; font-variant-numeric:tabular-nums; }
+  #slot.split .rec .stat { padding:24px; } #slot.split .rec .stat b { font-size:50px; }
   .stat span { display:block; margin-top:8px; font-size:26px; color:var(--mu); font-weight:600; }
   .grid { display:grid; gap:24px; }
 
@@ -134,7 +138,7 @@
   .plan { padding:24px 40px; }
   .row-stop { display:flex; align-items:center; gap:28px; min-height:112px; }
   #slot:not(.split) .row-stop { min-height:152px; }
-  .row-stop .tm { width:112px; font-size:30px; font-weight:600; color:var(--mu); font-variant-numeric:tabular-nums; flex:none; }
+  .row-stop .tm { width:112px; font-size:36px; font-weight:800; color:var(--tx); font-variant-numeric:tabular-nums; flex:none; }
   .rail { position:relative; width:32px; align-self:stretch; display:flex; justify-content:center; flex:none; }
   .rail::before { content:""; position:absolute; top:0; bottom:0; width:4px; background:var(--s3); }
   .first .rail::before { top:50%; } .last .rail::before { bottom:50%; }
@@ -175,10 +179,15 @@
   .saved { grid-template-columns:repeat(2,minmax(0,1fr)); grid-auto-rows:minmax(0,1fr); min-height:220px; flex:none; }
   #slot:not(.split) .saved { flex:1; }
   /* half window: the record scrolls (the app uses a ScrollView there) */
+  #slot.split .body.rec .cta { position:sticky; bottom:0; z-index:2; padding-top:24px; background:var(--s0); }
   #slot.split .body.rec { overflow-y:auto; scrollbar-width:none; } #slot.split .body.rec > * { flex:none; } #slot.split .body.rec .card.fill { flex:none; min-height:220px; }
 
   /* 주행 중 */
   .live-bg { position:absolute; inset:0; }
+  /* 이야기 중인 장소 사진 3장을 천천히 넘김: 8초씩, 1.4초 교차, 살짝 확대. 다시 그려도 이어지게 delay는 JS가 경과 시간만큼 당김 */
+  .live-bg.slide { opacity:0; animation:kb 24s linear infinite both; }
+  @keyframes kb { 0% { opacity:0; transform:scale(1); } 6% { opacity:1; } 33.3% { opacity:1; } 39.3% { opacity:0; transform:scale(1.08); } 100% { opacity:0; transform:scale(1.08); } }
+  @media (prefers-reduced-motion:reduce) { .live-bg.slide { display:none; } }
   .live-shade { position:absolute; inset:0; background:linear-gradient(180deg,rgba(7,9,12,.5) 0%,rgba(7,9,12,.2) 25%,rgba(7,9,12,.62) 50%,rgba(7,9,12,.95) 100%); }
   .nextpill { display:inline-flex; align-items:center; gap:24px; height:112px; padding:0 48px 0 16px; border-radius:999px; background:var(--s1); color:var(--tx); }
   .navdot { width:80px; height:80px; border-radius:50%; background:var(--inv); color:var(--on-inv); display:grid; place-items:center; flex:none; }
@@ -188,6 +197,24 @@
   .say.said { opacity:.72; }
   .say.fresh { animation:sayin .45s ease-out both; }
   @keyframes sayin { from { opacity:0; transform:translateY(18px); } }
+
+  /* 영상일기 */
+  .dur { font-size:56px; font-weight:800; color:var(--tx); }
+  .diary .dpv { height:330px; }
+  #slot:not(.split) .diary .dpv { width:56%; height:auto; }
+  .dpv .play { position:absolute; z-index:1; left:50%; top:45%; transform:translate(-50%,-50%); width:128px; height:128px; border-radius:50%; background:rgba(255,255,255,.92); color:#101317; display:grid; place-items:center; }
+  .dpv .play .ic { width:56px; height:56px; margin-left:6px; }
+  #slot.split .dpv .play { top:32%; width:104px; height:104px; }
+  .prog { display:flex; gap:10px; } .prog i { flex:1; height:8px; border-radius:999px; background:rgba(255,255,255,.35); } .prog i.on { background:#fff; }
+  .chaps { display:flex; gap:24px; overflow-x:auto; flex:none; }
+  .chap { display:flex; flex-direction:column; gap:8px; width:150px; flex:none; }
+  .chap .thumb { width:150px; height:96px; }
+  #slot:not(.split) .chap .thumb { height:110px; }
+  .memo { padding:24px 32px; flex:none; }
+  .mic { position:relative; width:96px; height:96px; border-radius:50%; background:var(--inv); color:var(--on-inv); display:grid; place-items:center; flex:none; }
+  .mic .ic { width:48px; height:48px; }
+  .mic.rec { background:#E5484D; color:#fff; }
+  .mic.rec::after { content:""; position:absolute; inset:-14px; border-radius:50%; box-shadow:0 0 0 5px rgba(229,72,77,.5); animation:mpulse 1.6s ease-out infinite; }
 
   /* sheet, toast */
   .sheetwrap { position:absolute; inset:0; background:rgba(7,9,12,.6); display:flex; flex-direction:column; justify-content:flex-end; z-index:20; }
@@ -344,6 +371,11 @@ const PHOTOS = { "속초":"harbor1", "강릉":"gnbeach", "양양":"surf", "아�
   "서피비치":"surf", "낙산사":"rock", "하조대":"waves", "남애항":"harbor2" };
 const ARRIVE = { "속초":"sokcho", "강릉":"lakesun1", "양양":"waves" };
 const photoOf = name => PH(PHOTOS[name] || "waves");
+// Several photos per place for the live slideshow (samples until places carry photo URLs).
+const GALLERY = { "청초호 둘레길":["lakesun2", "lakesun1", "sokcho"], "갯배 선착장":["harbor2", "harbor1", "harboralley"],
+  "속초중앙시장":["market2", "tofu", "harboralley"], "속초등대전망대":["lighthouse1", "waves", "rock"], "아바이마을":["harboralley", "harbor2", "market2"],
+  "영금정":["pavilion", "waves", "rock"], "영랑호":["lakesun1", "lakesun2", "waves"] };
+const galleryOf = name => GALLERY[name] ? GALLERY[name].map(PH) : [photoOf(name)];
 
 // Same sample data as the app (QA 속초 trip + sampleTrips + findsFor). km/time: sample arrival numbers (the app shows the navi's).
 const trips = [
@@ -374,7 +406,7 @@ let S;
 function fresh(keepTrip) {
   const ti = keepTrip && S ? S.ti : 0;
   S = { ti, tab:"plan", showTrips:false, phase:"start", route:trips[ti].places.slice(), visited:0, saved:[], heard:0, waypoints:0,
-        cur:null, speaking:false, held:null, call:false, sheet:false, li:0, fresh:false };
+        cur:null, slideAt:0, diary:false, memo:null, speaking:false, held:null, call:false, sheet:false, li:0, fresh:false };
 }
 fresh();
 const trip = () => trips[S.ti];
@@ -382,6 +414,10 @@ const trip = () => trips[S.ti];
 const batchim = w => { const c = w.charCodeAt(w.length - 1) - 0xAC00; return c >= 0 && c <= 11171 ? c % 28 : 0; };
 const ro = w => w + (batchim(w) && batchim(w) !== 8 ? "으로" : "로");
 const wa = w => w + (batchim(w) ? "과" : "와");
+// "1시간 20분" / "40분" → minutes; today's course = drive to each stop + time spent there (sample estimates; the navi has the real drive).
+const mins = v => { const m = /(?:(\d+)\s*시간)?\s*(?:(\d+)\s*분)?/.exec(v || ""); return (+m[1] || 0) * 60 + (+m[2] || 0); };
+const hm = n => n >= 60 ? `${Math.floor(n / 60)}시간${n % 60 ? ` ${n % 60}분` : ""}` : `${n}분`;
+const total = r => { const n = r.reduce((a, p) => a + mins(p.eta) + mins(p.stay), 0); return n ? hm(n) : ""; };
 const detour = p => (/(\d+)\s*분\s*추가/.exec((p && p.extra) || "") || [])[1];
 
 // ── click registry: every tappable element carries data-a = index of its handler ──
@@ -394,9 +430,14 @@ const ICON = {
   pin:'<svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21s-7-6.2-7-11.5A7 7 0 0 1 19 9.5C19 14.8 12 21 12 21z"/><circle cx="12" cy="9.5" r="2.5"/></svg>',
   check:'<svg class="ic" viewBox="0 0 24 24" style="stroke-width:3" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>',
   checkSm:'<svg class="ic sm" viewBox="0 0 24 24" style="stroke-width:3" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>',
+  bookmark:'<svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3.5h12v17l-6-4.2-6 4.2z"/></svg>',
+  mic:'<svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21"/></svg>',
+  play:'<svg class="ic fill" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.5v13l11-6.5z"/></svg>',
   nav:'<svg class="ic fill sm" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l7 18-7-4-7 4z"/></svg>',
 };
-const tag = (t, glass, icon = "") => `<span class="tag${glass ? " glass" : ""}">${icon}${esc(t)}</span>`;
+// Escape, then wrap numbers (+8분, 1시간, 22시, 2곳, 11:00, 1/2, 3.2 km) so they stand out.
+const nm = t => esc(t).replace(/\+?\d+(?:[:.\/]\d+)?(?:\s?(?:시간|분|초|km|m|곳|개|시|일|월|장))?/g, x => `<b class="n">${x}</b>`);
+const tag = (t, glass, icon = "") => `<span class="tag${glass ? " glass" : ""}">${icon}${nm(t)}</span>`;
 const btn = (label, kind, fn, extra = "") => `<button class="btn ${kind}" ${on(fn)} ${extra}>${label}</button>`;
 const photo = (src, cls = "", top = [], bot = "") => `<div class="photo ${cls}"><img class="img" src="${src}" alt="">${top.length || bot ? '<div class="scrim"></div>' : ""}
   ${top.length ? `<div class="top">${top.join("")}</div>` : ""}${bot ? `<div class="bot">${bot}</div>` : ""}</div>`;
@@ -406,7 +447,7 @@ const stat = (v, k, long) => `<div class="stat"><b class="${long ? "long" : ""}"
 function render() {
   acts = [];
   const live = S.phase === "live";
-  $("pane").innerHTML = (live ? liveView() : tabsView()) + (live && S.sheet && S.cur && S.cur.place ? sheetView() : "");
+  $("pane").innerHTML = (live ? liveView() : S.diary ? diaryView() : tabsView()) + (live && S.sheet && S.cur && S.cur.place ? sheetView() : "");
   $("toast").className = $("toast").className.replace(/\b(top|bottom)\b/g, "").trim() + (live ? " top" : " bottom");
   S.fresh = false;
 }
@@ -423,17 +464,17 @@ function tabsView() {
 function planTab() {
   const t = trip(), r = S.route;
   const stops = [`<div class="row-stop first${r.length ? "" : " last"}"><span class="tm">지금</span><span class="rail"><i></i></span>
-      <span class="grow col"><b class="t1 ell">여기서 출발</b><span class="cap ell">${r[0] ? r[0].eta + " 뒤 첫 장소에 도착해요" : ""}</span></span></div>`]
+      <span class="grow col"><b class="t1 ell">여기서 출발</b><span class="cap ell">${r[0] ? nm(r[0].eta + " 뒤 첫 장소에 도착해요") : ""}</span></span></div>`]
     .concat(r.map((p, i) => `<div class="row-stop${i === r.length - 1 ? " last" : ""}"><span class="tm">${esc(p.time || "")}</span><span class="rail"><i></i></span>
       <span class="thumb"><img class="img" src="${photoOf(p.name)}" alt=""></span>
-      <span class="grow col"><b class="t1 ell">${esc(p.name)}</b><span class="cap ell">${p.stay ? esc(p.stay) + " 머물러요" : esc(p.extra || "")}</span></span></div>`)).join("");
+      <span class="grow col"><b class="t1 ell">${esc(p.name)}</b><span class="cap ell">${nm(p.stay ? p.stay + " 머물러요" : p.extra || "")}</span></span></div>`)).join("");
   return `<div class="body">
     ${photo(photoOf(t.dest), "hero", [tag(t.date, 1), tag(wa(t.who) + " 함께", 1)], `<h1 class="h1" style="margin:0">오늘은 ${ro(t.dest)}<br>떠나는 날이에요</h1>`)}
     <div class="col fill">
       <div class="card plan col fill scrolly">
-        <div class="rw g8" style="margin-bottom:8px"><b class="t1 grow">${t.dest} 여행 일정</b>${tag(t.mood)}</div>
+        <div class="rw g8" style="margin-bottom:8px"><b class="t1 grow">${t.dest} 여행 일정</b>${total(r) ? tag(`총 ${total(r)}`) : ""}${tag(t.mood)}</div>
         ${stops}
-        <div class="rw g8" style="margin-top:20px;flex-wrap:wrap"><b class="t2">${r.length}곳 들러요</b>${t.tags.map(x => tag(x)).join("")}</div>
+        <div class="rw g8" style="margin-top:20px;flex-wrap:wrap"><b class="t2">${nm(r.length + "곳 들러요")}</b>${t.tags.map(x => tag(x)).join("")}</div>
       </div>
       <div class="cta">${btn("코스 바꾸기", "sec", () => { S.showTrips = true; render(); })}${btn("출발하기", "pri wide", startTrip)}</div>
     </div></div>`;
@@ -441,7 +482,7 @@ function planTab() {
 function tripsTab() {
   const cards = trips.map((t, i) => `<button class="course${i === S.ti ? " sel" : ""}" ${on(() => { if (i !== S.ti) { S.ti = i; S.route = trips[i].places.slice(); render(); } })}>
       ${photo(photoOf(t.dest), "", [tag(`경유지 ${t.places.length}곳`, 1)], `<b class="h2">${t.dest}</b>`)}
-      <span class="in"><span class="cap ell">${t.date}, ${wa(t.who)}, ${t.mood}</span>${t.places.map(p => `<span class="stop"><i></i><span class="ell">${p.time}  ${p.name}</span></span>`).join("")}</span>
+      <span class="in"><span class="cap ell">${nm(t.date)}, ${wa(t.who)}, ${t.mood}</span>${t.places.map(p => `<span class="stop"><i></i><span class="ell">${nm(p.time)}  ${p.name}</span></span>`).join("")}</span>
     </button>`).join("");
   return `<div class="col fill"><div class="courses">${cards}</div>
     <div class="cta">${btn("닫기", "on", () => { S.showTrips = false; render(); })}${btn(`${trip().dest} 코스로 출발하기`, "pri wide", startTrip)}</div></div>`;
@@ -451,7 +492,7 @@ function findTab() {
   if (!items.length) return `<div class="fill" style="display:grid;place-items:center"><span class="t2 muted">가는 길에 들를 만한 곳을 찾으면 여기 보여 드려요</span></div>`;
   return `<div class="grid finds">${items.map(f => { const added = S.route.some(p => p.name === f.name);
     return `<div class="find">${photo(photoOf(f.name), "", [tag(f.reason, 1)])}
-      <div class="info"><span class="grow col" style="width:100%"><b class="t1 ell">${f.name}</b><span class="cap ell">${f.extra}, ${f.open}</span></span>
+      <div class="info"><span class="grow col" style="width:100%"><b class="t1 ell">${f.name}</b><span class="cap ell">${nm(f.extra + ", " + f.open)}</span></span>
         ${btn(added ? "추가됨" : "추가", (added ? "on" : "sec") + " cmp", () => addFromFind(f))}</div></div>`; }).join("")}</div>`;
 }
 function recordTab(arrived) {
@@ -467,22 +508,29 @@ function recordTab(arrived) {
       <div class="card"><div class="route">${names.map((n, i) => `<div class="st${i === names.length - 1 ? " end" : ""}"><i></i><span class="ell" style="max-width:100%">${esc(n)}</span></div>`).join("")}</div></div>
       <div class="grid stats4">${stats.map(([v, k]) => stat(v, k)).join("")}</div>
       ${saved}
-      <div class="cta" style="margin-top:0">${arrived ? btn("처음으로", "sec", backToStart) : ""}${btn("폰에서 기록 이어가기", "pri wide", () => toast("폰의 차곡 기록에서 사진과 메모를 이어서 남길 수 있어요"))}</div>
+      <div class="cta" style="margin-top:0">${arrived ? btn("처음으로", "sec", backToStart) + btn(`${ICON.play}영상일기 남기기`, "pri wide", openDiary)
+          : btn("폰에서 기록 이어가기", "pri wide", () => toast("폰의 차곡 기록에서 사진과 메모를 이어서 남길 수 있어요"))}</div>
     </div></div>`;
 }
 
 // ── live: the place photo fills the panel ──
+// Photo stack that crossfades slowly (CSS .slide). Delays are pulled back by the time since S.slideAt so a re-render continues, not restarts.
+function slides(pics) {
+  const gone = (Date.now() - S.slideAt) / 1000;
+  return `<img class="img live-bg" src="${pics[0]}" alt="">` + (pics.length < 2 ? "" :
+    [0, 1, 2].map(i => `<img class="img live-bg slide" src="${pics[i % pics.length]}" alt="" style="animation-delay:${(i * 8 - gone).toFixed(2)}s">`).join(""));
+}
 function liveView() {
   const c = S.cur || {}, p = c.place, next = S.route[S.visited], rest = S.route.slice(S.visited + 1);
   const full = !$("slot").classList.contains("split");
-  const pill = next ? `<div class="nextpill"><span class="navdot">${ICON.nav}</span><span class="t2 muted">다음</span><b class="t1 ell">${esc(next.name)}</b><span class="t1 num muted">${esc(next.eta || "")}</span></div>` : "";
+  const pill = next ? `<div class="nextpill"><span class="navdot">${ICON.nav}</span><span class="t2 muted">다음</span><b class="t1 ell">${esc(next.name)}</b><span class="t1">${nm(next.eta || "")}</span></div>` : "";
   const up = full && rest.length ? `<div class="upnext">${rest.map(x => `<div class="rw g12" style="margin-bottom:24px"><span class="thumb sm"><img class="img" src="${photoOf(x.name)}" alt=""></span>
-      <b class="t2 grow ell">${esc(x.name)}</b><span class="t2 num muted">${esc(x.time || x.eta || "")}</span></div>`).join("")}</div>` : "";
+      <b class="t2 grow ell">${esc(x.name)}</b><span class="t2">${nm(x.time || x.eta || "")}</span></div>`).join("")}</div>` : "";
   const kept = p && S.saved.includes(p.name);
   const chip = !p ? "" : kept
     ? btn(`${ICON.check}${esc(p.name)}<span style="opacity:.6">담았어요</span>`, "", openSheet, 'style="background:#fff;color:#101317"')
-    : btn(`${ICON.pin}${esc(p.name)}<span class="muted num">${esc(p.extra || "")}</span>`, "", openSheet, 'style="background:var(--s1);color:var(--tx)"');
-  return `<img class="img live-bg" src="${photoOf(p ? p.name : next ? next.name : trip().dest)}" alt=""><div class="live-shade"></div>
+    : btn(`${ICON.pin}${esc(p.name)}<span>${nm(p.extra || "")}</span>`, "", openSheet, 'style="background:var(--s1);color:var(--tx)"');
+  return `${slides(galleryOf(p ? p.name : next ? next.name : trip().dest))}<div class="live-shade"></div>
     <div class="cv"><div class="rw" style="justify-content:space-between;align-items:flex-start">${pill}${up}</div>
       <div class="fill"></div>
       <div class="rw g16">${mark("lg" + (S.speaking ? " talk" : "") + (S.held ? " hold" : ""), () => { S.held = null; if (S.speaking) { stopVoice(); S.speaking = false; render(); } }, "차곡, 말하는 중이면 눌러서 멈추기")}
@@ -498,18 +546,48 @@ function sheetView() {
       <div class="lay">${photo(photoOf(p.name), "", [tag("담아 뒀어요", 1, ICON.checkSm)], `<h2 class="h2" style="margin:0">${esc(p.name)}, 들렀다 갈까요?</h2>`)}
         <div class="col g16 grow">${p.reason ? `<span>${tag(p.reason)}</span>` : ""}
           <div class="grid sstats">${stat(d ? "+" + d + "분" : "확인 필요", "추가 시간")}${stat(open, "방문 가능", open.length > 4)}${stat(S.waypoints + "/2", S.waypoints >= 2 ? "경유지 가득 참" : "내비 경유지")}</div>
-          <div class="cta" style="margin-top:0">${btn("다음에", "sec", () => decide(false))}${btn("들렀다 가자", "pri wide", () => decide(true))}</div>
+          <div class="cta" style="margin-top:0">${btn(`${ICON.bookmark}담아 두기`, "sec", () => decide(false))}${btn("경로에 추가", "pri wide", () => decide(true))}</div>
         </div></div></div></div>`;
 }
 
 // ── actions (CarActivity) ──
+// 영상일기 (도착 후, 정차 중): 오늘 들른 곳·담은 곳 사진 + 들은 이야기 자막 + 운전자 한마디 → 1분 영상. 편집·공유는 폰에서.
+function openDiary() { S.diary = true; S.slideAt = Date.now(); S.memo = null; render(); }
+function diaryView() {
+  const t = trip(), stops = S.route.concat(S.saved.filter(n => !S.route.some(p => p.name === n)).map(name => ({ name, kept:true })));
+  const pics = stops.map(p => photoOf(p.name)).filter((x, i, a) => a.indexOf(x) === i).slice(0, 3);
+  const line = S.heard ? LINES[0].text : `${t.dest}까지 오늘의 길을 1분 영상으로 묶었어요.`;
+  const chaps = [{ name:"출발", time:"09:10", pic:PH(PHOTOS[t.dest] || "waves") }].concat(stops.map(p => ({ name:p.name, time:p.kept ? "담은 곳" : p.time || "들른 곳", pic:photoOf(p.name) })));
+  const mic = (rec, label) => `<button class="mic${rec ? " rec" : ""}" ${on(rec ? () => {} : recordMemo)} aria-label="${label}">${ICON.mic}</button>`;
+  const memo = S.memo === "rec" ? `${mic(true, "녹음 중")}<span class="t2 grow">듣고 있어요. 오늘 어땠는지 한마디 해 주세요</span>`
+    : S.memo ? `${mic(false, "한마디 다시 남기기")}<span class="t2 grow">${nm("마지막 장면에 " + S.memo + "초 한마디를 넣었어요")}<br><span class="cap">다시 누르면 새로 남겨요</span></span>`
+    : `${mic(false, "한마디 남기기")}<span class="t2 grow">오늘의 한마디 남기기<br><span class="cap">영상 마지막에 내 목소리로 들어가요</span></span>`;
+  return `<div class="cv"><div class="head"><span class="col grow"><b class="h2">오늘의 영상일기</b><span class="cap">${nm(`${t.dest} · ${t.date} · 장면 ${chaps.length}개 · 이야기 ${S.heard}개`)}</span></span>
+      <b class="dur">${nm("1:12")}</b></div>
+    <div class="body diary">
+      <div class="photo dpv">${slides(pics.length ? pics : [PH(PHOTOS[t.dest] || "waves")])}<div class="scrim"></div>
+        <div class="top">${tag("미리보기", 1)}</div><span class="play">${ICON.play}</span>
+        <div class="bot"><p class="t2" style="margin:0 0 24px;color:#fff">“${esc(line)}”</p>
+          <div class="prog">${chaps.map((c, i) => `<i class="${i === 0 ? "on" : ""}"></i>`).join("")}</div></div></div>
+      <div class="col fill g16">
+        <div class="chaps scrolly">${chaps.map(c => `<div class="chap"><span class="thumb"><img class="img" src="${c.pic}" alt=""></span><b class="t2">${nm(c.time)}</b><span class="cap ell">${esc(c.name)}</span></div>`).join("")}</div>
+        <div class="rw g8" style="flex-wrap:wrap">${tag("이야기 자막", 0, ICON.checkSm)}${tag("배경음 잔잔한", 0, ICON.checkSm)}${tag("길 위의 소리", 0)}</div>
+        <div class="card rw g12 memo">${memo}</div>
+        <div class="fill"></div>
+        <div class="cta" style="margin-top:0">${btn("닫기", "sec", () => { S.diary = false; render(); })}${btn("폰으로 보내기", "pri wide", () => toast("폰의 차곡 기록으로 보냈어요. 사진을 더하고 공유할 수 있어요"))}</div>
+      </div></div></div>`;
+}
+function recordMemo() {
+  S.memo = "rec"; render();
+  setTimeout(() => { if (S.memo === "rec") { S.memo = 8; render(); } }, 3000);
+}
 function startTrip() {
   S.phase = "live"; S.showTrips = false; S.tab = "plan"; S.visited = 0;
   S.waypoints = Math.min(2, Math.max(0, S.route.length - 1)); // the navi gets the last stop as destination, the rest as waypoints
   const first = S.route[0];
   showLine({ text:first ? `출발! 먼저 ${ro(first.name)} 가요. 가는 길에 재밌는 이야기가 보이면 들려줄게요.` : "출발! 가는 길에 재밌는 이야기가 보이면 들려줄게요." }, false);
 }
-function showLine(line, counts) { S.cur = line; S.fresh = true; if (counts) S.heard++; if (S.phase !== "live") { S.phase = "live"; S.sheet = false; } render(); voice(line.text); }
+function showLine(line, counts) { if (!S.cur || (S.cur.place || {}).name !== (line.place || {}).name) S.slideAt = Date.now(); S.cur = line; S.fresh = true; if (counts) S.heard++; if (S.phase !== "live") { S.phase = "live"; S.sheet = false; } render(); voice(line.text); }
 function nextLine() { showLine(LINES[S.li++ % LINES.length], true); }
 function openSheet() { const p = S.cur.place; if (!S.saved.includes(p.name)) S.saved.push(p.name); S.sheet = true; render(); }
 function decide(ok) {
@@ -605,7 +683,7 @@ $("speak-text").onkeydown = e => { if (e.key === "Enter") speak($("speak-text").
 $("b-reset").onclick = () => { stopVoice(); clearInterval(auto); auto = null; $("b-auto").classList.remove("on"); fresh(); front("split"); };
 setInterval(() => { const d = new Date(); $("clock").textContent = d.toLocaleTimeString("ko-KR", { hour:"2-digit", minute:"2-digit" }).replace(/^(오전|오후) (.*)$/, "$2 $1"); }, 1000);
 
-// Open a state from the address (for links / screenshots): #light #trips #find #record #live #demo #sheet #arrive #zones #navi #full
+// Open a state from the address (for links / screenshots): #light #trips #find #record #live #demo #sheet #arrive #diary #zones #navi #full
 const h = location.hash;
 setTheme(!h.includes("light"));
 if (h.includes("trips")) S.showTrips = true;
@@ -613,9 +691,10 @@ if (h.includes("find")) S.tab = "find";
 if (h.includes("record")) S.tab = "record";
 front(h.includes("navi") ? "navi" : h.includes("full") ? "chagok" : "split");
 if (h.includes("live")) startTrip();
-if (h.includes("demo") || h.includes("sheet") || h.includes("arrive")) { startTrip(); nextLine(); }
+if (h.includes("demo") || h.includes("sheet") || h.includes("arrive") || h.includes("diary")) { startTrip(); nextLine(); }
 if (h.includes("sheet")) openSheet();
-if (h.includes("arrive")) { S.saved = ["청초호 둘레길"]; arrive(); }
+if (h.includes("arrive") || h.includes("diary")) { S.saved = ["청초호 둘레길"]; arrive(); }
+if (h.includes("diary")) openDiary();
 if (h.includes("zones")) $("b-zones").click();
 </script>
 </body>
