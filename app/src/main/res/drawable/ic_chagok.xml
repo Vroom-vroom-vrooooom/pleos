@@ -1,5 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
-<vector xmlns:android="http://schemas.android.com/apk/res/android" android:width="48dp" android:height="48dp" android:viewportWidth="48" android:viewportHeight="48">
-    <path android:fillColor="#243E37" android:pathData="M0,0H48V48H0Z" />
-    <path android:fillColor="@android:color/transparent" android:strokeColor="#F0E7CB" android:strokeWidth="2" android:strokeLineJoin="round" android:pathData="M9,16L24,8L39,16L24,24ZM9,24L24,32L39,24M9,32L24,40L39,32" />
-</vector>
+<!-- App icon, 차곡 R4 다크 (차량 화면 기본): full square background, symbol 64% of the visible width, centred; the launcher masks the corners.
+     Adaptive icon: 108dp layer, 72dp visible → symbol 46dp wide, 33dp tall. Pleos Connect icon spec still to check (contest guide). -->
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+    <background>
+        <color android:color="#121417" />
+    </background>
+    <foreground>
+        <inset android:drawable="@drawable/logo_symbol_dark" android:insetLeft="31dp" android:insetRight="31dp" android:insetTop="37.5dp" android:insetBottom="37.5dp" />
+    </foreground>
+</adaptive-icon>

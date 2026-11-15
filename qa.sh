@@ -37,14 +37,14 @@ case "${1:-}" in
     "$ADB" install -r app/build/outputs/apk/debug/app-debug.apk ;;
   start)
     "$ADB" shell am force-stop io.chagok.app.pleos
-    send chagok.trip '{"v":1,"tripId":"'$TRIP_ID'","destination":"속초","departure":"2026-12-01","endDate":"미정","recordRoute":false,"companions":["친구"],"interests":["맛집","자연·바다"],"mood":"활기찬","density":"보통","places":[{"id":"abai","name":"아바이마을","time":"11:00","duration":"40분","source":"저장한 릴스 1개","group":"저장","reason":"맛집 관심사와 맞아요","distance":"2 km · 6분","lat":38.2003,"lng":128.5953,"open":"영업 중 · 20시까지"},{"id":"yeonggeumjeong","name":"영금정","time":"13:00","duration":"30분","source":"좋아요한 쇼츠","group":"좋아요","reason":"바다 산책","distance":"4 km · 10분","lat":38.2131,"lng":128.6007,"open":"항상 열려 있어요"}]}'
+    send chagok.trip '{"v":1,"tripId":"'$TRIP_ID'","destination":"속초","departure":"2026-12-01","endDate":"미정","recordRoute":false,"companions":["친구"],"interests":["맛집","자연·바다"],"mood":"활기찬","density":"보통","places":[{"id":"abai","name":"아바이마을","time":"11:00","duration":"40분","source":"저장한 릴스 1개","group":"공유","reason":"맛집 관심사와 맞아요","distance":"2 km · 6분","lat":38.2003,"lng":128.5953,"open":"영업 중 · 20시까지"},{"id":"yeonggeumjeong","name":"영금정","time":"13:00","duration":"30분","source":"좋아요한 쇼츠","group":"좋아요","reason":"바다 산책","distance":"4 km · 10분","lat":38.2131,"lng":128.6007,"open":"항상 열려 있어요"}]}'
     echo "started: 속초 trip ($TRIP_ID)" ;;
   speak)
     text=$(json_str "${2:?usage: ./qa.sh speak \"문장\" [\"장소 이름\"]}")
     place=""
     if [ -n "${3:-}" ]; then
       name=$(json_str "$3")
-      place=',"place":{"id":"qa-'$(date +%s)'","name":"'"$name"'","time":"","duration":"","source":"차곡 라디오","group":"이야기","reason":"방금 들은 이야기","distance":"12분 추가 · QA","lat":38.2167,"lng":128.5867,"open":"항상 열려 있어요"}'
+      place=',"place":{"id":"qa-'$(date +%s)'","name":"'"$name"'","time":"","duration":"","source":"차곡 라디오","group":"공유","reason":"방금 들은 이야기","distance":"12분 추가 · QA","lat":38.2167,"lng":128.5867,"open":"항상 열려 있어요"}'
     fi
     say '{"v":1,"tripId":"'$TRIP_ID'","text":"'"$text"'"'"$place"'}'
     echo "sent SpeakCommand" ;;
