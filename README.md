@@ -15,6 +15,7 @@ Pleos Connect에서 돌아가는 차곡 차량 앱입니다. 내비·상태바·
 - 두 앱(과 백엔드)을 잇는 메시지: [CONTRACT.md](CONTRACT.md) · `domain/TripContract.kt`
 - 백엔드가 해야 할 것: [BACKEND.md](BACKEND.md)
 - QA 체크리스트: [QA.md](QA.md)
+- 차 → 폰 기록 전달 (무엇이 가고 무엇이 아직 안 가는지): [CAR-TO-PHONE.md](CAR-TO-PHONE.md)
 - 디자인 캔버스 "차곡 디자인" (Claude 디자인 아티팩트)이 기준입니다. `mockup/pleos-screen.html`은 이전 디자인의 반 칸 목업입니다.
 
 ## 백엔드 연결
