@@ -759,23 +759,17 @@ class CarActivity : ScreenActivity() {
         v.addView(row().apply { addView(tag("도착했어요", glass = true, icon = R.drawable.ic_check), lp(WRAP, dp(30))) }, lp(MATCH, WRAP))
         v.addView(View(this), lp(MATCH, 0, 1f))
         v.addView(label("${at.name}에 도착했어요", if (wide) 40 else 30, Color.WHITE, 800, spacing = 1.25f), lp(MATCH, WRAP))
-        v.addView(row().apply {
-            gravity = Gravity.BOTTOM
-            addView(label(nm("머무는 시간 ${mins(at.duration).takeIf { it > 0 } ?: 20}분", Color.WHITE, ratio = 30f / 15), 15, white72, 600, single = true))
-            next?.let { n -> addView(label(SpannableStringBuilder("다음  ").apply {
-                val s = length; append(n.name)
-                setSpan(TypefaceSpan(weight(700)), s, length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE); setSpan(RelativeSizeSpan(22f / 15), s, length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
-                setSpan(ForegroundColorSpan(Color.WHITE), s, length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
-                append("  "); append(nm(n.time.ifBlank { eta(n) ?: "" }, Color.WHITE, ratio = 30f / 15))
-            }, 15, white72, 600, single = true), lp(WRAP, WRAP).apply { marginStart = dp(if (wide) 32 else 20) }) }
-        }, lp(MATCH, WRAP).apply { topMargin = dp(16) })
-        v.addView(row().apply {
-            addView(button("사진은 폰에서", Color.argb(41, 255, 255, 255), Color.WHITE, icon = R.drawable.ic_camera) {
-                toast("폰의 차곡 기록에 이 장소가 열려 있어요. 사진은 내려서 남겨요")
-            }, lp(WRAP, dp(52)))
-            addView(button(if (next != null) "다음 장소로 출발" else "${draft.destination} 여행 마치기", Color.WHITE, Color.parseColor("#101317")) { leaveStop() },
-                lp(0, dp(52), 1f).apply { marginStart = dp(12) })
-        }, lp(if (wide) dp(640) else MATCH, WRAP).apply { topMargin = dp(24) })
+        // 머무는 시간 and 다음 장소 on their own lines (one line looked cramped); photos are taken on the phone, so no photo button here.
+        v.addView(label(nm("머무는 시간 ${mins(at.duration).takeIf { it > 0 } ?: 20}분", Color.WHITE, ratio = 30f / 15), 15, white72, 600, single = true),
+            lp(MATCH, WRAP).apply { topMargin = dp(16) })
+        next?.let { n -> v.addView(label(SpannableStringBuilder("다음  ").apply {
+            val s = length; append(n.name)
+            setSpan(TypefaceSpan(weight(700)), s, length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE); setSpan(RelativeSizeSpan(22f / 15), s, length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            setSpan(ForegroundColorSpan(Color.WHITE), s, length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            append("  "); append(nm(n.time.ifBlank { eta(n) ?: "" }, Color.WHITE, ratio = 30f / 15))
+        }, 15, white72, 600, single = true), lp(MATCH, WRAP).apply { topMargin = dp(8) }) }
+        v.addView(button(if (next != null) "다음 장소로 출발" else "${draft.destination} 여행 마치기", Color.WHITE, Color.parseColor("#101317")) { leaveStop() },
+            lp(if (wide) dp(640) else MATCH, dp(52)).apply { topMargin = dp(24) })
         frame.addView(v, FrameLayout.LayoutParams(MATCH, MATCH))
         return frame
     }
@@ -804,8 +798,8 @@ class CarActivity : ScreenActivity() {
         sheet.addView(View(this).apply { background = rounded(s3, 999) }, lp(dp(40), dp(4)).apply { gravity = Gravity.CENTER_HORIZONTAL; bottomMargin = dp(16) })
         val pic = photo(photoOf(place.name), 24, top = listOf(tag("담아 뒀어요", glass = true, icon = R.drawable.ic_check)), bottom = label("${place.name}, 경로에 추가할까요?", 22, Color.WHITE, 750))
         val slots = navi?.waypoints ?: 0
-        val open = place.open.ifBlank { "확인 필요" }
-        val stats = grid(listOf(stat(detour(place), "더 걸리는 시간", s2), stat(open, "방문 가능", s2, valueSp = if (open.length > 4) 17 else 28),
+        val open = openLabel(place.open.ifBlank { "확인 필요" })
+        val stats = grid(listOf(stat(detour(place), "더 걸리는 시간", s2), stat(open, "방문 가능", s2, valueSp = if (open.length > 4) 17 else 28, valueColor = openColor(open)),
             stat("$slots/2", if (slots >= 2) "경유지 가득 참" else "추가한 경유지", s2)), 3, gap = 8, fill = false)
         val cta = row().apply {
             addView(FrameLayout(context).apply {
@@ -952,12 +946,12 @@ class CarActivity : ScreenActivity() {
                 .apply { duration = 800; repeatMode = Animation.REVERSE; repeatCount = Animation.INFINITE })
         }, FrameLayout.LayoutParams(w, w * 228 / 325, Gravity.CENTER))
     }
-    private fun stat(value: String, label: String, fill: Int, valueSp: Int = 28) = column(bg = rounded(fill, 24)).apply {
+    private fun stat(value: String, label: String, fill: Int, valueSp: Int = 28, valueColor: Int = tx) = column(bg = rounded(fill, 24)).apply {
         gravity = Gravity.BOTTOM; setPadding(dp(18), dp(16), dp(18), dp(16))
         // Design .stat: the figure big in Outfit, its unit small and muted; a text value (영업 시간) stays in SUIT.
         // Figures stay on one line and shrink to fit a narrow cell (+12분 in the half window).
         val figure = value.firstOrNull()?.let { it.isDigit() || it == '+' } == true
-        addView((if (figure) label(nm(value, tx, ratio = (valueSp + 6) / 16f), 16, mu, 650, spacing = 1.15f) else label(value, valueSp, tx, 700, spacing = 1.15f)).apply {
+        addView((if (figure) label(nm(value, valueColor, ratio = (valueSp + 6) / 16f), 16, mu, 650, spacing = 1.15f) else label(value, valueSp, valueColor, 700, spacing = 1.15f)).apply {
             if (figure) { maxLines = 1; setAutoSizeTextTypeUniformWithConfiguration(10, 16, 1, android.util.TypedValue.COMPLEX_UNIT_SP) }
         }, lp(MATCH, WRAP))
         addView(label(label, 13, mu, 600), lp(WRAP, WRAP).apply { topMargin = dp(4) })
@@ -1036,9 +1030,10 @@ class CarActivity : ScreenActivity() {
                 gravity = Gravity.CENTER_HORIZONTAL
                 addView(View(context).apply { background = GradientDrawable().apply {
                     shape = GradientDrawable.OVAL
-                    when { i < at -> setColor(mu); i == at -> setColor(inv); else -> { setColor(s1); setStroke(dp(4), inv) } }
+                    // 지나온 곳: light green with a dark name (grey on grey was hard to read)
+                    when { i < at -> setColor(VISITED); i == at -> setColor(inv); else -> { setColor(s1); setStroke(dp(4), inv) } }
                 } }, lp(dp(17), dp(17)))
-                addView(label(n, if (i == names.lastIndex) 14 else 13, if (i < at) mu else tx, if (i == names.lastIndex) 800 else 700, single = true).apply { gravity = Gravity.CENTER },
+                addView(label(n, if (i == names.lastIndex) 14 else 13, tx, if (i == names.lastIndex) 800 else 700, single = true).apply { gravity = Gravity.CENTER },
                     lp(MATCH, WRAP).apply { topMargin = dp(10) })
             }, lp(0, WRAP, 1f)) }
         }, FrameLayout.LayoutParams(MATCH, WRAP))
@@ -1048,15 +1043,22 @@ class CarActivity : ScreenActivity() {
      * Numbers stand out (design): times, distances, counts — 8분, 1시간, 22시, 2곳, 11:00, 1/2, 3.2 km — 18% larger, weight 800,
      * in [ink] (the strongest text colour; white on photos). [base] colours the rest of the text when it differs from the view's.
      */
-    private fun nm(text: String, ink: Int = tx, base: Int? = null, ratio: Float = 1.18f): CharSequence = SpannableStringBuilder(text).apply {
+    private fun nm(text: String, ink: Int = tx, base: Int? = null, ratio: Float = 1.3f): CharSequence = SpannableStringBuilder(text).apply {
         base?.let { setSpan(ForegroundColorSpan(it), 0, length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE) }
         NUMBER.findAll(text).forEach { m ->
             val (a, b) = m.range.first to m.range.last + 1
-            setSpan(RelativeSizeSpan(ratio), a, b, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
-            setSpan(TypefaceSpan(numFace(650)), a, b, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            // The figure big, its unit (분 · km · 곳) small: "12분" reads as a big 12 with a small 분.
+            val n = a + (FIGURE.find(m.value)?.value?.length ?: m.value.length)
+            setSpan(RelativeSizeSpan(ratio), a, n, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            setSpan(TypefaceSpan(numFace(650)), a, n, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
             setSpan(ForegroundColorSpan(ink), a, b, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            if (n < b) setSpan(RelativeSizeSpan(maxOf(.8f, ratio * .62f)), n, b, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
         }
     }
+    /** "항상 열려 있어요" / "항상 열림" → "연중무휴"; other opening hours stay as they are. */
+    private fun openLabel(open: String) = if (open.contains("항상")) "연중무휴" else open
+    /** 방문 가능 여부 colour: green when the place can be visited, red when it is closed or unknown. */
+    private fun openColor(open: String) = if (Regex("마감|휴무|닫|불가|확인").containsMatchIn(open)) Color.parseColor("#D64545") else Color.parseColor("#2E9E5B")
 
     /** "1시간 20분" / "40분" → minutes. */
     private fun mins(v: String) = Regex("""(?:(\d+)\s*시간)?\s*(?:(\d+)\s*분)?""").find(v)?.let { (it.groupValues[1].toIntOrNull() ?: 0) * 60 + (it.groupValues[2].toIntOrNull() ?: 0) } ?: 0
@@ -1214,6 +1216,8 @@ class CarActivity : ScreenActivity() {
         const val STALE_MS = 120_000L // a queued line older than this is skipped
         const val SLIDE_MS = 8_000L // live slideshow: one photo this long
         val NUMBER = Regex("""\+?\d+(?:[:./]\d+)?(?:\s?(?:시간|분|초|km|m|곳|개|시|일|월|장))?""")
+        val FIGURE = Regex("""^\+?\d+(?:[:./]\d+)?""")
+        val VISITED = Color.parseColor("#8CCB6E")
         const val ACTION_SPEAK = "io.chagok.app.pleos.SPEAK"
         const val ACTION_TRIP = "io.chagok.app.pleos.TRIP"
         const val ACTION_ARRIVE = "io.chagok.app.pleos.ARRIVE"
