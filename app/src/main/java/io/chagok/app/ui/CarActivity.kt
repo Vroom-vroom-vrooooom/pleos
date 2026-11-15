@@ -24,6 +24,10 @@ import android.text.SpannableStringBuilder
 import android.text.Spanned
 import android.text.TextUtils
 import android.text.style.ForegroundColorSpan
+import android.text.style.RelativeSizeSpan
+import android.text.style.TypefaceSpan
+import android.animation.ValueAnimator
+import android.os.SystemClock
 import android.util.DisplayMetrics
 import android.util.Log
 import android.view.Gravity
@@ -39,6 +43,7 @@ import java.io.IOException
 import java.time.Instant
 import java.util.concurrent.Executors
 import java.time.LocalDate
+import java.time.LocalTime
 import java.util.Locale
 import kotlin.math.abs
 
@@ -94,6 +99,16 @@ class CarActivity : ScreenActivity() {
     private val outbox = mutableListOf<Pair<DriveEvent, Place?>>()
     private var fetching = false
     private val poll = object : Runnable { override fun run() { fetch(); main.postDelayed(this, POLL_MS) } }
+    private var diaryOpen = false // 영상일기 after arrival (example UI: nothing is recorded or sent yet)
+    private var diaryMemo: Int? = null // seconds of the 오늘의 한마디; -1 while "recording"
+    private var startedAt: String? = null // HH:mm of 출발하기, the diary's first chapter
+    // Live photo slideshow: which place it shows, since when, and the two image layers that crossfade.
+    private var slideFor: String? = null
+    private var slideAt = 0L
+    private var slidePics: List<Int> = emptyList()
+    private var slideViews: Pair<ImageView, ImageView>? = null
+    private val slideTick = Runnable { nextSlide() }
+    private var profileOpen = false // 프로필: phone connection (pairing) lives here, parked screens only
     private var pairing: String? = null // digits typed on the pairing pad; null = pad closed
     private val audio by lazy { getSystemService(AudioManager::class.java) }
     private val main = Handler(Looper.getMainLooper())
@@ -278,6 +293,7 @@ class CarActivity : ScreenActivity() {
 
     private fun startTrip() {
         showTrips = false; tab = TAB_PLAN
+        startedAt = LocalTime.now().let { String.format(Locale.KOREA, "%02d:%02d", it.hour, it.minute) }
         sendRoute()
         emit(DriveEvent.Type.TRIP_STARTED)
         val first = route.firstOrNull()
@@ -305,7 +321,7 @@ class CarActivity : ScreenActivity() {
 
     /** After arrival: clear the finished trip and go back to the start screen (also the back button on the summary). */
     private fun backToStart() {
-        current = null; held = null; savedPlaces.clear(); linesHeard = 0; sheetPlace = null; showTrips = false; tab = TAB_PLAN
+        current = null; held = null; savedPlaces.clear(); linesHeard = 0; sheetPlace = null; showTrips = false; tab = TAB_PLAN; diaryOpen = false; diaryMemo = null
         selectTrip(plan); history.clear(); screen = Screen.CAR_READY; render()
     }
 
@@ -313,7 +329,9 @@ class CarActivity : ScreenActivity() {
     override fun onBackPressed() {
         when {
             sheetPlace != null -> { sheetPlace = null; render() }
+            diaryOpen -> { diaryOpen = false; render() }
             pairing != null -> { pairing = null; render() }
+            profileOpen -> { profileOpen = false; render() }
             screen == Screen.CAR_SUMMARY -> backToStart()
             showTrips -> { showTrips = false; render() }
             screen == Screen.CAR_READY && tab != TAB_PLAN -> { tab = TAB_PLAN; render() }
@@ -357,7 +375,10 @@ class CarActivity : ScreenActivity() {
         if (!approve) { emit(DriveEvent.Type.WAYPOINT_DECLINED, place); toast("${place.name}, 기록에만 담아 둘게요"); return }
         val added = navi?.takeIf { it.ready }?.addWaypoint(place) == true
         emit(DriveEvent.Type.WAYPOINT_APPROVED, place)
-        if (route.none { it.id == place.id }) route.add(visited.coerceAtMost(route.size), place)
+        // The route follows the navi: a place joins it when the navi took it (or there is no navi to ask). With both
+        // waypoints taken it only goes into the record — showing it as "다음" would point where the navi isn't going.
+        val full = navi?.takeIf { it.ready } != null && !added
+        if (!full && route.none { it.id == place.id }) route.add(visited.coerceAtMost(route.size), place)
         nextEta = null // the navi re-routes; wait for its next progress event
         toast(if (added) "${place.name}, 내비 경유지에 넣었어요" else if ((navi?.waypoints ?: 0) >= 2) "내비 경유지는 2곳까지라 기록에만 넣었어요" else "${place.name}, 다음 들를 곳으로 넣었어요")
     }
@@ -436,11 +457,15 @@ class CarActivity : ScreenActivity() {
 
     // ── render: the whole panel is rebuilt from state ──
     override fun render() {
-        root.removeAllViews()
+        root.removeAllViews(); main.removeCallbacks(slideTick); slideViews = null
         val live = screen == Screen.CAR_RADIO
-        root.addView(if (live) liveView() else tabsView(), FrameLayout.LayoutParams(MATCH, MATCH))
+        root.addView(when { live -> liveView(); screen == Screen.CAR_SUMMARY && diaryOpen -> diaryView(); else -> tabsView() }, FrameLayout.LayoutParams(MATCH, MATCH))
         sheetPlace?.takeIf { live }?.let { root.addView(sheetView(it), FrameLayout.LayoutParams(MATCH, MATCH)) }
-        pairing?.takeIf { !live }?.let { root.addView(pairView(it), FrameLayout.LayoutParams(MATCH, MATCH)) }
+        if (!live) {
+            val pad = pairing // the number pad opens over the profile, back returns to it
+            if (pad != null) root.addView(pairView(pad), FrameLayout.LayoutParams(MATCH, MATCH))
+            else if (profileOpen) root.addView(profileView(), FrameLayout.LayoutParams(MATCH, MATCH))
+        }
         toastText?.let { root.addView(toastView(it), FrameLayout.LayoutParams(WRAP, WRAP, Gravity.CENTER_HORIZONTAL or if (live) Gravity.TOP else Gravity.BOTTOM).apply {
             if (live) topMargin = dp(104) else bottomMargin = dp(100)
         }) }
@@ -452,8 +477,21 @@ class CarActivity : ScreenActivity() {
         val shown = if (arrivedNow) TAB_RECORD else tab
         val v = column(pad = 24)
         val head = row()
+        // Logo kit R4: the top bar takes the horizontal lockup; the half window only has room for the symbol.
+        // Light/dark versions come from drawable / drawable-night, following the car's night mode.
+        head.addView(ImageView(this).apply {
+            setImageResource(if (wide) R.drawable.logo_horizontal else R.drawable.logo_symbol); contentDescription = "차곡"; scaleType = ImageView.ScaleType.FIT_CENTER
+        }, if (wide) lp(dp(104), dp(34)).apply { marginEnd = dp(20) } else lp(dp(30), dp(22)).apply { marginEnd = dp(10) })
         head.addView(segmented(listOf(TAB_PLAN to "오늘 일정", TAB_FIND to "발견", TAB_RECORD to "기록"), shown) { tab = it; showTrips = false; render() })
         head.addView(View(this), lp(0, 1, 1f))
+        head.addView(FrameLayout(this).apply {
+            background = oval(s2); isClickable = true; isFocusable = true
+            contentDescription = if (paired) "프로필, 폰과 연결됨" else "프로필, 폰과 연결하기"
+            setOnClickListener { profileOpen = true; render() }
+            addView(ImageView(context).apply { setImageResource(R.drawable.ic_profile); imageTintList = ColorStateList.valueOf(tx) }, FrameLayout.LayoutParams(dp(24), dp(24), Gravity.CENTER))
+            // Not connected yet: a dot asks for attention, like an unread badge.
+            if (!paired) addView(View(context).apply { background = oval(Color.parseColor("#E5484D")) }, FrameLayout.LayoutParams(dp(12), dp(12), Gravity.TOP or Gravity.END))
+        }, lp(dp(52), dp(52)).apply { marginEnd = dp(12) })
         head.addView(mark(64, inv, onInv, talking = speakingNow).apply {
             contentDescription = "차곡에게 듣기"
             setOnClickListener { speakingNow = true; render(); say("오늘은 ${ro(draft.destination)} 떠나는 날이에요. 준비되면 출발하자고 말해 주세요.") }
@@ -477,11 +515,12 @@ class CarActivity : ScreenActivity() {
         val card = column(bg = rounded(s1, 24)).apply { setPadding(dp(20), dp(12), dp(20), dp(12)) }
         card.addView(row().apply {
             addView(label("${draft.destination} 여행 일정", 17, tx, 700), lp(0, WRAP, 1f))
+            totalTime()?.let { addView(tag("총 $it"), lp(WRAP, WRAP).apply { marginEnd = dp(8) }) }
             addView(tag(draft.mood))
         }, lp(MATCH, WRAP).apply { bottomMargin = dp(4) })
         card.addView(stopRow("지금", "여기서 출발", route.firstOrNull()?.let(::eta)?.let { "$it 뒤 첫 장소에 도착해요" } ?: "", null, first = true, last = route.isEmpty()))
         route.forEachIndexed { i, p -> card.addView(stopRow(p.time, p.name, "${p.duration} 머물러요", photoOf(p.name), first = false, last = i == route.lastIndex)) }
-        card.addView(flow(listOf(label("${route.size}곳 들러요", 15, tx, 600)) + draft.interests.map { tag(it) }), lp(MATCH, WRAP).apply { topMargin = dp(10) })
+        card.addView(flow(listOf(label(nm("${route.size}곳 들러요"), 15, tx, 600)) + draft.interests.map { tag(it) }), lp(MATCH, WRAP).apply { topMargin = dp(10) })
         val cta = row().apply {
             addView(button("코스 바꾸기", s2, tx) { showTrips = true; render() }, lp(WRAP, dp(52)))
             addView(button("출발하기", inv, onInv) { startTrip() }, lp(0, dp(52), 1f).apply { marginStart = dp(12) })
@@ -502,10 +541,10 @@ class CarActivity : ScreenActivity() {
             }
             val pic = photo(photoOf(t.draft.destination), 0, top = listOf(tag("경유지 ${t.places.size}곳", glass = true)), bottom = label(t.draft.destination, 22, Color.WHITE, 750))
             val info = column().apply { if (wide) setPadding(dp(18), dp(16), dp(18), dp(18)) else setPadding(dp(16), dp(10), dp(12), dp(6)); gravity = Gravity.CENTER_VERTICAL }
-            info.addView(label("${monthDay(t.draft.departure)}, ${wa(t.draft.companions.firstOrNull() ?: "혼자")}, ${t.draft.mood}", 13, mu, single = true), lp(MATCH, WRAP).apply { bottomMargin = dp(if (wide) 8 else 4) })
+            info.addView(label(nm("${monthDay(t.draft.departure)}, ${wa(t.draft.companions.firstOrNull() ?: "혼자")}, ${t.draft.mood}"), 13, mu, single = true), lp(MATCH, WRAP).apply { bottomMargin = dp(if (wide) 8 else 4) })
             t.places.forEach { p -> info.addView(row().apply {
                 addView(View(context).apply { background = oval(mu) }, lp(dp(6), dp(6)).apply { marginEnd = dp(8) })
-                addView(label("${p.time}  ${p.name}", 14, tx, 600, single = true, spacing = 1.2f), lp(0, WRAP, 1f))
+                addView(label(nm("${p.time}  ${p.name}"), 14, tx, 600, single = true, spacing = 1.2f), lp(0, WRAP, 1f))
             }, lp(MATCH, WRAP).apply { bottomMargin = dp(if (wide) 8 else 2) }) }
             if (wide) { card.addView(pic, lp(MATCH, dp(170))); card.addView(info, lp(MATCH, WRAP)) }
             else { card.addView(pic, lp(dp(130), MATCH)); card.addView(info, lp(0, WRAP, 1f)) }
@@ -532,7 +571,7 @@ class CarActivity : ScreenActivity() {
                 val add = button(if (added) "추가됨" else "추가", if (added) inv else s2, if (added) onInv else tx, compact = true) { addFromFind(f) }
                 val info = column().apply {
                     addView(label(f.name, 17, tx, 700, single = true))
-                    addView(label(listOf(f.distance, f.open).filter(String::isNotBlank).joinToString(", "), 13, mu, single = true))
+                    addView(label(nm(listOf(f.distance, f.open).filter(String::isNotBlank).joinToString(", ")), 13, mu, single = true))
                 }
                 // Design: name and 추가 on one row; the half window is too narrow for that, so 추가 goes under the name.
                 addView(if (wide) row().apply {
@@ -558,10 +597,12 @@ class CarActivity : ScreenActivity() {
         val saved = if (kept.isEmpty()) centered(label("가는 길에 담은 곳이 여기 모여요", 15, mu, 600)).apply { background = rounded(s1, 24) }
             else grid(kept.take(2).map { photo(photoOf(it.name), 16, top = listOf(tag("담은 곳", glass = true)), bottom = label(it.name, 17, Color.WHITE, 700, single = true), small = true) }, 2)
         val cta = row().apply {
-            if (arrivedNow) addView(button("처음으로", s2, tx) { backToStart() }, lp(WRAP, dp(52)).apply { marginEnd = dp(12) })
-            else if (paired) addView(button("연결 끊기", s2, tx) { unpair("폰과 연결을 끊었어요") ; render() }, lp(WRAP, dp(52)).apply { marginEnd = dp(12) })
-            addView(if (paired) button("폰에서 기록 이어가기", inv, onInv) { toast("폰의 차곡 기록에서 사진과 메모를 이어서 남길 수 있어요") }
-                else button("폰과 연결하기", inv, onInv) { pairing = ""; render() }, lp(0, dp(52), 1f))
+            if (arrivedNow) {
+                addView(button("처음으로", s2, tx) { backToStart() }, lp(WRAP, dp(52)).apply { marginEnd = dp(12) })
+                addView(button("영상일기 남기기", inv, onInv, icon = R.drawable.ic_play) { diaryOpen = true; diaryMemo = null; render() }, lp(0, dp(52), 1f))
+            } else addView(button("폰에서 기록 이어가기", inv, onInv) {
+                if (paired) toast("폰의 차곡 기록에서 사진과 메모를 이어서 남길 수 있어요") else { profileOpen = true; render() }
+            }, lp(0, dp(52), 1f))
         }
         return if (wide) split(hero, listOf(strip to 0f, statGrid to 0f, saved to 1f), cta, heroTall = 0)
         else column().apply {
@@ -580,7 +621,7 @@ class CarActivity : ScreenActivity() {
         val place = current?.place
         val next = route.getOrNull(visited)
         val frame = FrameLayout(this)
-        frame.addView(ImageView(this).apply { scaleType = ImageView.ScaleType.CENTER_CROP; setImageResource(photoOf(place?.name ?: next?.name ?: draft.destination)) }, FrameLayout.LayoutParams(MATCH, MATCH))
+        frame.addView(slideshow(place?.name ?: next?.name ?: draft.destination), FrameLayout.LayoutParams(MATCH, MATCH))
         frame.addView(View(this).apply { background = GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, intArrayOf(shade(.5f), shade(.2f), shade(.62f), shade(.95f))) }, FrameLayout.LayoutParams(MATCH, MATCH))
         val v = column(pad = 24)
         val top = row().apply { gravity = Gravity.TOP }
@@ -592,7 +633,7 @@ class CarActivity : ScreenActivity() {
             }, lp(dp(40), dp(40)).apply { marginEnd = dp(12) })
             addView(label("다음", 15, mu, 600), lp(WRAP, WRAP).apply { marginEnd = dp(12) })
             addView(label(next.name, 17, tx, 700, single = true), lp(WRAP, WRAP).apply { marginEnd = dp(12) })
-            addView(label(nextEta ?: eta(next) ?: "", 17, mu, 700, num = true))
+            addView(label(nm(nextEta ?: eta(next) ?: ""), 17, mu, 700, num = true))
         }, lp(WRAP, dp(56)))
         top.addView(View(this), lp(0, 1, 1f))
         val rest = route.drop(visited + 1)
@@ -601,7 +642,7 @@ class CarActivity : ScreenActivity() {
             rest.forEach { p -> addView(row().apply {
                 addView(photo(photoOf(p.name), 12, small = true), lp(dp(40), dp(40)).apply { marginEnd = dp(12) })
                 addView(label(p.name, 15, tx, 600, single = true), lp(0, WRAP, 1f))
-                addView(label(p.time.ifBlank { eta(p) ?: "" }, 15, mu, 600, num = true))
+                addView(label(nm(p.time.ifBlank { eta(p) ?: "" }), 15, mu, 600, num = true))
             }, lp(MATCH, WRAP).apply { bottomMargin = dp(12) }) }
         }, lp(dp(300), WRAP))
         v.addView(top, lp(MATCH, WRAP))
@@ -621,11 +662,9 @@ class CarActivity : ScreenActivity() {
         v.addView(line, lp(WRAP, WRAP).apply { topMargin = dp(24) })
         if (place != null) {
             val kept = place.id in savedPlaces
-            val label = SpannableStringBuilder(place.name).apply {
-                val extra = if (kept) "  담았어요" else place.distance.takeIf { it.isNotBlank() }?.let { "  $it" } ?: ""
-                val s = length; append(extra)
-                setSpan(ForegroundColorSpan(if (kept) Color.parseColor("#99101317") else mu), s, length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
-            }
+            val ink = if (kept) Color.parseColor("#101317") else tx
+            val label = SpannableStringBuilder(place.name).append(nm(if (kept) "  담았어요" else place.distance.takeIf { it.isNotBlank() }?.let { "  $it" } ?: "",
+                ink, base = if (kept) Color.parseColor("#99101317") else mu))
             v.addView(button(label, if (kept) Color.WHITE else s1, if (kept) Color.parseColor("#101317") else tx, icon = if (kept) R.drawable.ic_check else R.drawable.ic_pin) { openSheet(place) },
                 lp(WRAP, dp(52)).apply { topMargin = dp(24) })
         }
@@ -633,7 +672,7 @@ class CarActivity : ScreenActivity() {
         return frame
     }
 
-    /** "○○, 들렀다 갈까요?": photo, why, 추가 시간 · 방문 가능 · 내비 경유지, 다음에 / 들렀다 가자. */
+    /** "○○, 들렀다 갈까요?": photo, why, 추가 시간 · 방문 가능 · 내비 경유지, 담아 두기 / 경로에 추가. */
     private fun sheetView(place: Place): View {
         val wrap = FrameLayout(this).apply { setBackgroundColor(shade(.6f)); isClickable = true; setOnClickListener { sheetPlace = null; render() } }
         val sheet = column(bg = GradientDrawable().apply { setColor(s1); cornerRadii = FloatArray(8) { if (it < 4) dp(24).toFloat() else 0f } }).apply {
@@ -645,8 +684,8 @@ class CarActivity : ScreenActivity() {
         val open = place.open.ifBlank { "확인 필요" }
         val stats = grid(listOf(stat(detour(place), "추가 시간", s2), stat(open, "방문 가능", s2, valueSp = if (open.length > 4) 17 else 28), stat("$slots/2", if (slots >= 2) "경유지 가득 참" else "내비 경유지", s2)), 3, gap = 8, fill = false)
         val cta = row().apply {
-            addView(button("다음에", s2, tx) { decide(approve = false) }, lp(WRAP, dp(52)))
-            addView(button("들렀다 가자", inv, onInv) { decide(approve = true) }, lp(0, dp(52), 1f).apply { marginStart = dp(12) })
+            addView(button("담아 두기", s2, tx, icon = R.drawable.ic_bookmark) { decide(approve = false) }, lp(WRAP, dp(52)))
+            addView(button("경로에 추가", inv, onInv) { decide(approve = true) }, lp(0, dp(52), 1f).apply { marginStart = dp(12) })
         }
         val side = column().apply {
             place.reason.takeIf { it.isNotBlank() }?.let { addView(tag(it), lp(WRAP, WRAP).apply { bottomMargin = dp(16) }) }
@@ -660,6 +699,40 @@ class CarActivity : ScreenActivity() {
         }, lp(MATCH, WRAP))
         else { sheet.addView(pic, lp(MATCH, dp(150)).apply { bottomMargin = dp(16) }); sheet.addView(side, lp(MATCH, WRAP)) }
         wrap.addView(sheet, FrameLayout.LayoutParams(MATCH, WRAP, Gravity.BOTTOM))
+        return wrap
+    }
+
+    /** 프로필 (parked only): whether this car is linked to a phone's Chagok account, and the way to link / unlink it. */
+    private fun profileView(): View {
+        val wrap = FrameLayout(this).apply { setBackgroundColor(shade(.6f)); isClickable = true; setOnClickListener { profileOpen = false; render() } }
+        val sheet = column(bg = GradientDrawable().apply { setColor(s1); cornerRadii = FloatArray(8) { if (it < 4) dp(24).toFloat() else 0f } }).apply {
+            isClickable = true; setPadding(dp(24), dp(12), dp(24), dp(24))
+        }
+        sheet.addView(View(this).apply { background = rounded(s3, 999) }, lp(dp(40), dp(4)).apply { gravity = Gravity.CENTER_HORIZONTAL; bottomMargin = dp(16) })
+        sheet.addView(row().apply {
+            addView(FrameLayout(context).apply {
+                background = oval(if (paired) inv else s2)
+                addView(ImageView(context).apply { setImageResource(R.drawable.ic_profile); imageTintList = ColorStateList.valueOf(if (paired) onInv else tx) }, FrameLayout.LayoutParams(dp(32), dp(32), Gravity.CENTER))
+            }, lp(dp(64), dp(64)).apply { marginEnd = dp(16) })
+            addView(column().apply {
+                addView(label("프로필", 22, tx, 750))
+                addView(label(if (paired) "폰의 차곡 계정과 연결됐어요" else "아직 폰과 연결하지 않았어요", 15, mu, 600))
+            }, lp(0, WRAP, 1f))
+        }, lp(MATCH, WRAP).apply { bottomMargin = dp(20) })
+        val status = column(bg = rounded(s2, 20)).apply { setPadding(dp(20), dp(16), dp(20), dp(16)) }
+        listOf(
+            "폰에서 보낸 여행" to if (paired) "오늘 일정에 바로 떠요" else "연결하면 받을 수 있어요",
+            "주행 기록" to if (paired) "폰의 기록에 쌓여요" else "이 차에만 남아요",
+        ).forEachIndexed { i, (k, v) -> status.addView(row().apply {
+            addView(label(k, 15, mu, 600), lp(0, WRAP, 1f)); addView(label(v, 15, tx, 700))
+        }, lp(MATCH, WRAP).apply { if (i > 0) topMargin = dp(10) }) }
+        sheet.addView(status, lp(MATCH, WRAP).apply { bottomMargin = dp(20) })
+        sheet.addView(row().apply {
+            addView(button("닫기", s2, tx) { profileOpen = false; render() }, lp(WRAP, dp(52)))
+            addView(if (paired) button("연결 끊기", s2, tx) { unpair("폰과 연결을 끊었어요") } else button("폰과 연결하기", inv, onInv) { pairing = ""; render() },
+                lp(0, dp(52), 1f).apply { marginStart = dp(12) })
+        }, lp(MATCH, WRAP))
+        wrap.addView(sheet, FrameLayout.LayoutParams(if (wide) dp(560) else MATCH, WRAP, Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL))
         return wrap
     }
 
@@ -722,7 +795,7 @@ class CarActivity : ScreenActivity() {
         isClickable = true; isFocusable = true; setOnClickListener { onClick() }
     }
     private fun tag(value: String, glass: Boolean = false, icon: Int = 0) = TextView(this).apply {
-        text = value; textSize = 13f; typeface = weight(600); gravity = Gravity.CENTER_VERTICAL; maxLines = 1
+        text = nm(value, if (glass) Color.WHITE else tx); textSize = 13f; typeface = weight(600); gravity = Gravity.CENTER_VERTICAL; maxLines = 1
         setTextColor(if (glass) Color.WHITE else mu); background = rounded(if (glass) Color.argb(122, 10, 12, 16) else s2, 999)
         setPadding(dp(12), 0, dp(12), 0); minHeight = dp(30); height = dp(30)
         if (icon != 0) { setCompoundDrawablesRelativeWithIntrinsicBounds(icon, 0, 0, 0); compoundDrawablePadding = dp(6); compoundDrawableTintList = ColorStateList.valueOf(currentTextColor) }
@@ -730,7 +803,8 @@ class CarActivity : ScreenActivity() {
     private fun segmented(items: List<Pair<String, String>>, on: String, pick: (String) -> Unit) = row(bg = rounded(s3, 999)).apply {
         setPadding(dp(4), dp(4), dp(4), dp(4))
         items.forEach { (key, label) -> addView(TextView(context).apply {
-            text = label; textSize = 15f; typeface = weight(600); gravity = Gravity.CENTER; setPadding(dp(20), 0, dp(20), 0)
+            text = label; textSize = 15f; typeface = weight(600); gravity = Gravity.CENTER
+            dp(if (wide) 20 else 14).let { setPadding(it, 0, it, 0) } // half window: a little tighter so the logo fits
             setTextColor(if (key == on) tx else mu); background = if (key == on) rounded(s1, 999) else null
             isClickable = true; setOnClickListener { pick(key) }
         }, lp(WRAP, dp(40))) }
@@ -738,7 +812,10 @@ class CarActivity : ScreenActivity() {
     private fun mark(sizeDp: Int, circle: Int, bar: Int, talking: Boolean) = VoiceMarkView(this, circle, bar).apply { this.talking = talking; isClickable = true; isFocusable = true }
     private fun stat(value: String, label: String, fill: Int, valueSp: Int = 28) = column(bg = rounded(fill, 24)).apply {
         gravity = Gravity.BOTTOM; setPadding(dp(18), dp(16), dp(18), dp(16))
-        addView(label(value, valueSp, tx, 600, num = true, spacing = 1.15f))
+        // Numbers stand out (design: bigger, 800). Big values stay on one line and shrink to fit a narrow cell (+12분 in the half window).
+        addView(label(value, if (valueSp >= 22) valueSp + 4 else valueSp, tx, 800, num = true, spacing = 1.15f).apply {
+            if (valueSp >= 22) { maxLines = 1; setAutoSizeTextTypeUniformWithConfiguration(16, valueSp + 4, 1, android.util.TypedValue.COMPLEX_UNIT_SP) }
+        }, lp(MATCH, WRAP))
         addView(label(label, 13, mu, 600), lp(WRAP, WRAP).apply { topMargin = dp(4) })
     }
 
@@ -790,7 +867,7 @@ class CarActivity : ScreenActivity() {
     /** One stop of today's plan: time · rail with a ring (first stop filled) · thumbnail · name and stay. */
     private fun stopRow(time: String, name: String, sub: String, thumb: Int?, first: Boolean, last: Boolean) = row().apply {
         minimumHeight = dp(if (wide) 76 else 56)
-        addView(label(time, 15, mu, 600, num = true), lp(dp(56), WRAP).apply { marginEnd = dp(14) })
+        addView(label(time, 16, tx, 800, num = true), lp(dp(56), WRAP).apply { marginEnd = dp(14) })
         addView(FrameLayout(context).apply {
             addView(column().apply {
                 addView(View(context).apply { setBackgroundColor(if (first) Color.TRANSPARENT else s3) }, lp(dp(2), 0, 1f))
@@ -802,7 +879,7 @@ class CarActivity : ScreenActivity() {
         if (thumb != null) addView(photo(thumb, 16), lp(dp(if (wide) 52 else 44), dp(if (wide) 52 else 44)).apply { marginEnd = dp(14) })
         addView(column().apply {
             addView(label(name, 17, tx, 700, single = true))
-            if (sub.isNotBlank()) addView(label(sub, 13, mu, single = true))
+            if (sub.isNotBlank()) addView(label(nm(sub), 13, mu, single = true))
         }, lp(0, WRAP, 1f))
     }
 
@@ -819,8 +896,139 @@ class CarActivity : ScreenActivity() {
         }, FrameLayout.LayoutParams(MATCH, WRAP))
     }
 
+    /**
+     * Numbers stand out (design): times, distances, counts — 8분, 1시간, 22시, 2곳, 11:00, 1/2, 3.2 km — 18% larger, weight 800,
+     * in [ink] (the strongest text colour; white on photos). [base] colours the rest of the text when it differs from the view's.
+     */
+    private fun nm(text: String, ink: Int = tx, base: Int? = null): CharSequence = SpannableStringBuilder(text).apply {
+        base?.let { setSpan(ForegroundColorSpan(it), 0, length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE) }
+        NUMBER.findAll(text).forEach { m ->
+            val (a, b) = m.range.first to m.range.last + 1
+            setSpan(RelativeSizeSpan(1.18f), a, b, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            setSpan(TypefaceSpan(weight(800)), a, b, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            setSpan(ForegroundColorSpan(ink), a, b, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        }
+    }
+
+    /** "1시간 20분" / "40분" → minutes. */
+    private fun mins(v: String) = Regex("""(?:(\d+)\s*시간)?\s*(?:(\d+)\s*분)?""").find(v)?.let { (it.groupValues[1].toIntOrNull() ?: 0) * 60 + (it.groupValues[2].toIntOrNull() ?: 0) } ?: 0
+    /** Today's course: the drive to each stop + the time spent there (sample estimates; the navi has the real drive). */
+    private fun totalTime(): String? = route.sumOf { mins(eta(it) ?: "") + mins(it.duration) }.takeIf { it > 0 }
+        ?.let { if (it >= 60) "${it / 60}시간" + (if (it % 60 > 0) " ${it % 60}분" else "") else "${it}분" }
+
+    /**
+     * The place photos crossfading slowly (8 s each, 1.4 s fade) behind the live line and the diary preview. The slide follows
+     * the clock since the subject changed, so a re-render shows the same photo instead of starting over. Static when the system
+     * turns animations off. ponytail: the design's slight zoom is left out — every render would restart it.
+     */
+    private fun slideshow(subject: String, pics: List<Int> = galleryOf(subject)): FrameLayout {
+        if (slideFor != subject) { slideFor = subject; slideAt = SystemClock.uptimeMillis() }
+        slidePics = pics
+        val gone = SystemClock.uptimeMillis() - slideAt
+        val back = ImageView(this).apply { scaleType = ImageView.ScaleType.CENTER_CROP; setImageResource(pics[(gone / SLIDE_MS).toInt() % pics.size]) }
+        val front = ImageView(this).apply { scaleType = ImageView.ScaleType.CENTER_CROP; alpha = 0f }
+        slideViews = back to front
+        if (pics.size > 1 && ValueAnimator.areAnimatorsEnabled()) main.postDelayed(slideTick, SLIDE_MS - gone % SLIDE_MS)
+        return FrameLayout(this).apply { addView(back, FrameLayout.LayoutParams(MATCH, MATCH)); addView(front, FrameLayout.LayoutParams(MATCH, MATCH)) }
+    }
+    private fun nextSlide() {
+        val (back, front) = slideViews ?: return
+        if (!back.isAttachedToWindow || slidePics.size < 2) return
+        val pic = slidePics[((SystemClock.uptimeMillis() - slideAt) / SLIDE_MS).toInt() % slidePics.size]
+        front.setImageResource(pic); front.alpha = 0f
+        front.animate().alpha(1f).setDuration(1400).withEndAction { back.setImageResource(pic); front.alpha = 0f }.start()
+        main.postDelayed(slideTick, SLIDE_MS)
+    }
+
+    /**
+     * 영상일기 (after arrival, parked): the trip as a short film — preview of the photos with the last story line as a caption,
+     * the chapters (출발 + stops + places kept), options, and 오늘의 한마디 in the driver's voice; editing/sharing on the phone.
+     * ponytail: example UI from the design — nothing is recorded or sent yet; the buttons say so.
+     */
+    private fun diaryView(): View {
+        val kept = (trips.flatMap { it.places } + findsFor(draft.destination) + listOfNotNull(current?.place)).filter { it.id in savedPlaces && route.none { r -> r.id == it.id } }.distinctBy { it.id }
+        val chapters = listOf(Triple(startedAt ?: "출발", "출발", tripPhoto())) +
+            route.map { Triple(it.time.ifBlank { "들른 곳" }, it.name, photoOf(it.name)) } + kept.map { Triple("담은 곳", it.name, photoOf(it.name)) }
+        val seconds = 12 + 15 * chapters.size
+        val v = column(pad = 24)
+        v.addView(row().apply {
+            addView(column().apply {
+                addView(label("오늘의 영상일기", 22, tx, 750))
+                addView(label(nm("${draft.destination} · ${monthDay(draft.departure)} · 장면 ${chapters.size}개 · 이야기 ${linesHeard}개"), 13, mu, 600, single = true))
+            }, lp(0, WRAP, 1f))
+            addView(label(String.format(Locale.KOREA, "%d:%02d", seconds / 60, seconds % 60), 30, tx, 800, num = true))
+        }, lp(MATCH, WRAP).apply { bottomMargin = dp(16) })
+        val preview = FrameLayout(this).apply {
+            background = rounded(s3, 24); clipToOutline = true
+            addView(slideshow("diary", chapters.map { it.third }.distinct()), FrameLayout.LayoutParams(MATCH, MATCH))
+            addView(View(context).apply { background = GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, intArrayOf(shade(.35f), shade(0f), shade(.3f), shade(.85f))) }, FrameLayout.LayoutParams(MATCH, MATCH))
+            addView(tag("미리보기 · 예시", glass = true), FrameLayout.LayoutParams(WRAP, dp(30), Gravity.TOP or Gravity.START).apply { setMargins(dp(16), dp(16), 0, 0) })
+            addView(FrameLayout(context).apply {
+                background = oval(Color.argb(235, 255, 255, 255))
+                addView(ImageView(context).apply { setImageResource(R.drawable.ic_play); imageTintList = ColorStateList.valueOf(Color.parseColor("#101317")) }, FrameLayout.LayoutParams(dp(26), dp(26), Gravity.CENTER).apply { leftMargin = dp(3) })
+            }, FrameLayout.LayoutParams(dp(56), dp(56), Gravity.CENTER).apply { bottomMargin = dp(24) })
+            addView(column().apply {
+                addView(label("“${current?.text ?: "${ro(draft.destination)} 가는 오늘의 길을 짧은 영상으로 묶었어요."}”", 15, Color.WHITE, 700, spacing = 1.35f).apply { maxLines = 2; ellipsize = TextUtils.TruncateAt.END })
+                addView(row().apply { chapters.indices.forEach { i -> addView(View(context).apply { background = rounded(if (i == 0) Color.WHITE else Color.argb(90, 255, 255, 255), 999) }, lp(0, dp(4), 1f).apply { if (i > 0) marginStart = dp(5) }) } },
+                    lp(MATCH, WRAP).apply { topMargin = dp(12) })
+            }, FrameLayout.LayoutParams(MATCH, WRAP, Gravity.BOTTOM).apply { setMargins(dp(20), 0, dp(20), dp(18)) })
+        }
+        val strip = HorizontalScrollView(this).apply {
+            isHorizontalScrollBarEnabled = false
+            addView(row().apply {
+                gravity = Gravity.TOP
+                chapters.forEachIndexed { i, (time, name, pic) -> addView(column().apply {
+                    addView(photo(pic, 16, small = true), lp(dp(96), dp(64)))
+                    addView(label(time, 15, tx, 800, num = true), lp(WRAP, WRAP).apply { topMargin = dp(6) })
+                    addView(label(name, 13, mu, 600, single = true), lp(dp(96), WRAP))
+                }, lp(WRAP, WRAP).apply { if (i > 0) marginStart = dp(12) }) }
+            })
+        }
+        val memo = row(bg = rounded(s1, 20)).apply {
+            setPadding(dp(16), dp(12), dp(16), dp(12))
+            val recording = diaryMemo == -1
+            addView(FrameLayout(context).apply {
+                background = oval(if (recording) Color.parseColor("#E5484D") else inv); isClickable = !recording
+                contentDescription = "오늘의 한마디 남기기"
+                setOnClickListener {
+                    diaryMemo = -1; render()
+                    main.postDelayed({ if (diaryMemo == -1) { diaryMemo = 8; if (diaryOpen) render() } }, 3000) // example: no audio is captured
+                }
+                addView(ImageView(context).apply { setImageResource(R.drawable.ic_mic); imageTintList = ColorStateList.valueOf(if (recording) Color.WHITE else onInv) }, FrameLayout.LayoutParams(dp(24), dp(24), Gravity.CENTER))
+            }, lp(dp(48), dp(48)).apply { marginEnd = dp(14) })
+            addView(column().apply {
+                when (val m = diaryMemo) {
+                    -1 -> { addView(label("듣고 있어요", 16, tx, 700)); addView(label("오늘 어땠는지 한마디 해 주세요", 13, mu, 600)) }
+                    null -> { addView(label("오늘의 한마디 남기기", 16, tx, 700)); addView(label("영상 마지막에 내 목소리로 들어가요", 13, mu, 600)) }
+                    else -> { addView(label(nm("마지막 장면에 ${m}초 한마디를 넣었어요"), 16, tx, 700)); addView(label("다시 누르면 새로 남겨요", 13, mu, 600)) }
+                }
+            }, lp(0, WRAP, 1f))
+        }
+        val options = flow(listOf(tag("이야기 자막", icon = R.drawable.ic_check), tag("배경음 잔잔한", icon = R.drawable.ic_check), tag("길 위의 소리")))
+        val details = scroll(column().apply {
+            addView(strip, lp(MATCH, WRAP).apply { bottomMargin = dp(14) })
+            addView(options, lp(MATCH, WRAP).apply { bottomMargin = dp(14) })
+            addView(memo, lp(MATCH, WRAP))
+        })
+        val cta = row().apply {
+            addView(button("닫기", s2, tx) { diaryOpen = false; render() }, lp(WRAP, dp(52)))
+            addView(button("폰으로 보내기", inv, onInv) { toast("예시 화면이에요. 영상일기를 폰으로 보내는 기능은 준비 중이에요") }, lp(0, dp(52), 1f).apply { marginStart = dp(12) })
+        }
+        v.addView(if (wide) row().apply {
+            gravity = Gravity.FILL_VERTICAL
+            addView(preview, lp(0, MATCH, .56f).apply { marginEnd = dp(16) })
+            addView(column().apply { addView(details, lp(MATCH, 0, 1f)); addView(cta, lp(MATCH, WRAP).apply { topMargin = dp(16) }) }, lp(0, MATCH, .44f))
+        } else column().apply {
+            addView(preview, lp(MATCH, dp(170)).apply { bottomMargin = dp(14) })
+            addView(details, lp(MATCH, 0, 1f))
+            addView(cta, lp(MATCH, WRAP).apply { topMargin = dp(14) })
+        }, lp(MATCH, 0, 1f))
+        return v
+    }
+
     // ── photos ── ponytail: sample photos by place name until places carry a photo URL (contract change in both repos).
     private fun photoOf(name: String) = PHOTOS[name] ?: FALLBACK[abs(name.hashCode()) % FALLBACK.size]
+    private fun galleryOf(name: String) = GALLERY[name] ?: listOf(photoOf(name))
     private fun tripPhoto() = photoOf(draft.destination)
     private fun arrivePhoto() = ARRIVE[draft.destination] ?: tripPhoto()
 
@@ -856,6 +1064,8 @@ class CarActivity : ScreenActivity() {
         const val RESUME_WITHIN_MS = 60_000L // a line cut off longer ago than this is skipped, not re-read
         const val POLL_MS = 5_000L // backend message queue (backend docs: every 5–10 s)
         const val STALE_MS = 120_000L // a queued line older than this is skipped
+        const val SLIDE_MS = 8_000L // live slideshow: one photo this long
+        val NUMBER = Regex("""\+?\d+(?:[:./]\d+)?(?:\s?(?:시간|분|초|km|m|곳|개|시|일|월|장))?""")
         const val ACTION_SPEAK = "io.chagok.app.pleos.SPEAK"
         const val ACTION_TRIP = "io.chagok.app.pleos.TRIP"
         const val ACTION_ARRIVE = "io.chagok.app.pleos.ARRIVE"
@@ -873,6 +1083,18 @@ class CarActivity : ScreenActivity() {
             "낙산사" to R.drawable.photo_rock, "하조대" to R.drawable.photo_waves, "남애항" to R.drawable.photo_harbor2,
         )
         val ARRIVE = mapOf("속초" to R.drawable.photo_sokcho, "강릉" to R.drawable.photo_lakesun1, "양양" to R.drawable.photo_waves)
+        /** Several photos per place for the live slideshow (samples until places carry photo URLs). */
+        val GALLERY = mapOf(
+            "청초호 둘레길" to listOf(R.drawable.photo_lakesun2, R.drawable.photo_lakesun1, R.drawable.photo_sokcho),
+            "갯배 선착장" to listOf(R.drawable.photo_harbor2, R.drawable.photo_harbor1, R.drawable.photo_harboralley),
+            "속초중앙시장" to listOf(R.drawable.photo_market2, R.drawable.photo_tofu, R.drawable.photo_harboralley),
+            "속초등대전망대" to listOf(R.drawable.photo_lighthouse1, R.drawable.photo_waves, R.drawable.photo_rock),
+            "아바이마을" to listOf(R.drawable.photo_harboralley, R.drawable.photo_harbor2, R.drawable.photo_market2),
+            "영금정" to listOf(R.drawable.photo_pavilion, R.drawable.photo_waves, R.drawable.photo_rock),
+            "영랑호" to listOf(R.drawable.photo_lakesun1, R.drawable.photo_lakesun2, R.drawable.photo_waves),
+            "경포대" to listOf(R.drawable.photo_waves, R.drawable.photo_lakesun1, R.drawable.photo_gnbeach),
+            "안목 커피거리" to listOf(R.drawable.photo_cafe2, R.drawable.photo_gnbeach, R.drawable.photo_waves),
+        )
         val FALLBACK = listOf(R.drawable.photo_waves, R.drawable.photo_lakesun2, R.drawable.photo_harbor1, R.drawable.photo_gnbeach)
 
         /** ponytail: sample nearby places for 발견 until the backend recommends them along the route. */
