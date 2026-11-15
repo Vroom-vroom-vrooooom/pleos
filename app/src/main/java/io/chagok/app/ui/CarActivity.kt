@@ -740,7 +740,7 @@ class CarActivity : ScreenActivity() {
         if (place != null) {
             val kept = place.id in savedPlaces
             val chip = if (kept) SpannableStringBuilder(place.name).append(nm("  담았어요", Color.parseColor("#101317"), base = Color.parseColor("#99101317")))
-                else SpannableStringBuilder(place.name).append("  ").append(nm(detour(place), tx, ratio = 22f / 16))
+                else SpannableStringBuilder(place.name).apply { detourOrNull(place)?.let { append("  ").append(nm(it, tx, ratio = 22f / 16)) } } // unknown detour → name only
             v.addView(button(chip, if (kept) Color.WHITE else s1, if (kept) Color.parseColor("#101317") else tx, icon = if (kept) R.drawable.ic_check else R.drawable.ic_pin) { openSheet(place) },
                 lp(WRAP, dp(52)).apply { topMargin = dp(24) })
         }
@@ -1183,7 +1183,8 @@ class CarActivity : ScreenActivity() {
     private fun arrivePhoto() = ARRIVE[draft.destination] ?: tripPhoto()
 
     // ── helpers ──
-    private fun detour(p: Place) = Regex("(\\d+)\\s*분\\s*추가").find(p.distance + " " + p.reason)?.let { "+${it.groupValues[1]}분" } ?: "확인 필요"
+    private fun detourOrNull(p: Place) = Regex("(\\d+)\\s*분\\s*추가").find(p.distance + " " + p.reason)?.let { "+${it.groupValues[1]}분" }
+    private fun detour(p: Place) = detourOrNull(p) ?: "확인 필요"
     /** "2 km · 6분" → "6분"; a bare value stays as is. */
     private fun eta(p: Place) = p.distance.substringAfterLast("·").trim().ifBlank { null }
     private fun minutes(s: Int) = (s / 60).let { if (it >= 60) "${it / 60}시간 ${it % 60}분" else "${it.coerceAtLeast(1)}분" }
