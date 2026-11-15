@@ -6,6 +6,7 @@
 #   ./qa.sh speak "문장" ["장소 이름"]    send a backend SpeakCommand (optionally about a place)
 #   ./qa.sh bad                         send a broken SpeakCommand (app must ignore it)
 #   ./qa.sh call | hangup               incoming phone call on / off (Chagok must pause, then re-read)
+#   ./qa.sh stop                        pretend the navi reached the next waypoint (장소에 도착)
 #   ./qa.sh arrive                      pretend the navi reached the destination (arrival summary)
 #   ./qa.sh events                      watch TripPlan / DriveEvent / warnings live (Ctrl+C to stop)
 #   ./qa.sh shot [name]                 save a screenshot to qa-shots/
@@ -21,7 +22,8 @@ if [ -z "$ADB" ]; then
 fi
 [ -n "$ADB" ] || { echo "adb not found. Set ADB=/path/to/adb" >&2; exit 1; }
 # With a phone also connected (relay.sh), talk to the Pleos emulator unless ANDROID_SERIAL says otherwise.
-export ANDROID_SERIAL="${ANDROID_SERIAL:-$("$ADB" devices | tr -d '' | awk '$2=="device" && $1 ~ /^emulator-/ {print $1; exit}')}"
+export ANDROID_SERIAL="${ANDROID_SERIAL:-$("$ADB" devices | tr -d '
+' | awk '$2=="device" && $1 ~ /^emulator-/ {print $1; exit}')}"
 APP=io.chagok.app.pleos/io.chagok.app.ui.CarActivity
 TRIP_ID=qa-trip
 
@@ -66,6 +68,9 @@ case "${1:-}" in
     [ "$(top_app)" = navigation ] || { "$ADB" shell input tap 1155 1370; sleep 2; }   # dock: navigation to the front
     "$ADB" shell input swipe 2547 720 1700 720 600; sleep 2   # drag the ⋮ handle to the middle
     [ "$(chagok_x)" = 1718 ] && echo "split: 내비 왼쪽 / 차곡 오른쪽" || echo "split failed — check the emulator screen" ;;
+  stop)
+    # Pretend the navi reached the next waypoint (QA only): shows 장소에 도착.
+    "$ADB" shell am broadcast -a io.chagok.app.pleos.STOP -p io.chagok.app.pleos >/dev/null && echo "sent stop" ;;
   arrive)
     # Pretend the navi reported the destination (QA only): shows the arrival summary and sends TRIP_FINISHED.
     "$ADB" shell am broadcast -a io.chagok.app.pleos.ARRIVE -p io.chagok.app.pleos >/dev/null && echo "sent arrive" ;;

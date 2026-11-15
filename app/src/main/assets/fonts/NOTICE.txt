@@ -1,0 +1,4 @@
+Fonts used by the Chagok car app (design system "차곡 디자인" v9):
+- Outfit Variable 1.100 (Outfit project), this folder — SIL Open Font License 1.1 — https://github.com/Outfitio/Outfit-Fonts
+- SUIT (res/font, static weights) — SIL Open Font License 1.1 — see docs/fonts/OFL-SUIT.txt
+License text: https://openfontlicense.org/open-font-license-official-text/
